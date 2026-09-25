@@ -41,6 +41,7 @@ All notable changes to this project are documented here. The format follows [Kee
 
 ### Changed
 
+- The Homeostatic UI worksheet adds section 16, decisions for the first release: situation alerts detected only by Home Assistant rules bound as entities (pending an RFP change), one attribute-matching rule model for checks and exclusions, enrollment as an integration setting, importance on functions, notification content and timing owned by Homeostatic with delivery left to Home Assistant consumers, and the notification designed before the panel. Library behavior is unchanged.
 - ADR 0029 is accepted: public query records and adapter-owned views.
 - Documented current Home Assistant error and repair conventions in the UI worksheet, with release-source references and proposed reuse of native setup, reauthentication, entity availability, Repairs, diagnostics, and action errors.
 - The Homeostatic UI proposal now includes user-created alerts and rule-reported conditions, with shared attention, explicit clearing and freshness, restart/schedule handling, and a proposed situation-alert scope extension. Library behavior is unchanged.
