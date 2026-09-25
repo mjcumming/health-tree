@@ -1,0 +1,43 @@
+id: scenario-75-group-rejoin-final-evidence
+title: Group dissolution uses the restarted stale clocks before emitting
+covers: [scenario-75]
+start: 2026-09-25T12:00:00Z
+settings: {settle: 0s, rejoin_grace: 0s, startup_grace: 0s, coalesce_count: 3, coalesce_window: 60s}
+graph:
+  - id: controller
+    checks:
+      - {id: state, raise_hold: 0s, clear_hold: 30s, ttl: null, unknown_hold: 10m}
+  - id: d1
+    depends_on: [controller]
+    checks:
+      - {id: state, raise_hold: 0s, clear_hold: 30s, ttl: null, unknown_hold: 10m}
+  - id: d2
+    depends_on: [controller]
+    checks:
+      - {id: state, raise_hold: 0s, clear_hold: 0s, ttl: null, unknown_hold: 10m}
+  - id: d3
+    depends_on: [controller]
+    checks:
+      - {id: state, raise_hold: 0s, clear_hold: 30s, ttl: null, unknown_hold: 10m}
+steps:
+  - at: 2026-09-25T12:10:00Z
+    ingest:
+      - {node: controller, check: state, status: pass, reason: available}
+      - {node: d1, check: state, status: pass, reason: available}
+      - {node: d2, check: state, status: pass, reason: available}
+    expect:
+      bind: {problem: {opened: controller}}
+      events:
+        - {opened: {anchor: controller, episode: $problem, recorded: [d1, d2, d3]}}
+        - {updated: {episode: $problem, recorded: []}}
+      open: [{episode: $problem, anchor: controller}]
+  - at: 2026-09-25T12:10:01Z
+    restart: true
+    expect: {events: []}
+  - at: 2026-09-25T12:10:30Z
+    expect:
+      events: [{resolved: {episode: $problem, resolution: cleared}}]
+      open: []
+  - at: 2026-09-25T12:20:00Z
+    expect:
+      events: [{opened: {anchor: d3, reasons: [stale]}}]

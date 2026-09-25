@@ -174,23 +174,40 @@ class Engine:
         An edge may name a node that is not registered yet. It takes effect
         when that node is registered.
         """
-        if any(edge.group is not None for edge in node.depends_on):
-            raise ValueError("redundancy groups are reserved and rejected in v1")
-        if self._reaches(node.node_id, [edge.to for edge in node.depends_on]):
-            raise ValueError(f"an edge from {node.node_id} would close a cycle")
+        return self.register_many([node], now)
+
+    def register_many(self, nodes: Sequence[Node], now: datetime) -> list[Event]:
+        """Add or replace nodes atomically, then evaluate once (ADR 0033).
+
+        Validate the final graph before changing state or time. Unmentioned nodes
+        remain registered. Retained checks keep their observations and holds.
+        """
+        if not nodes:
+            raise ValueError("a batch needs at least one node")
+        graph = self._nodes.copy()
+        seen: set[str] = set()
+        for node in nodes:
+            if node.node_id in seen:
+                raise ValueError(f"{node.node_id} appears twice in one batch")
+            if any(edge.group is not None for edge in node.depends_on):
+                raise ValueError("redundancy groups are reserved and rejected in v1")
+            seen.add(node.node_id)
+            graph[node.node_id] = node
+        order = self._topological(graph)
         self._tick(now)
-        previous = self._checks.get(node.node_id, {})
-        states: dict[str, CheckState] = {}
-        for check in node.checks:
-            state = previous.get(check.check_id)
-            if state is None:
-                state = CheckState.registered(node.node_id, check, now)
-            state.check = check
-            states[check.check_id] = state
-        self._nodes[node.node_id] = node
-        self._checks[node.node_id] = states
-        self._node_states.setdefault(node.node_id, _NodeState())
-        self._order = self._topological()
+        for node in nodes:
+            previous = self._checks.get(node.node_id, {})
+            states: dict[str, CheckState] = {}
+            for check in node.checks:
+                state = previous.get(check.check_id)
+                if state is None:
+                    state = CheckState.registered(node.node_id, check, now)
+                state.check = check
+                states[check.check_id] = state
+            self._checks[node.node_id] = states
+            self._node_states.setdefault(node.node_id, _NodeState())
+        self._nodes = graph
+        self._order = order
         return self._evaluate(now)
 
     def remove(self, node_id: str, now: datetime) -> list[Event]:
@@ -397,20 +414,18 @@ class Engine:
         answers: dict[str, ReadinessAnswer] = {}
         visited: set[str] = set()
 
-        def visit(name: str, *, requested: bool) -> None:
+        stack = [(node_id, True) for node_id in reversed(tuple(node_ids))]
+        while stack:
+            name, requested = stack.pop()
             if name in visited:
-                return
+                continue
             visited.add(name)
             dependencies = self._dependencies(name)
             if frame.watched[name]:
                 answers[name] = _ANSWER[frame.own[name]]
             elif not dependencies and not requested:
                 answers[name] = "unknown"
-            for dependency in dependencies:
-                visit(dependency, requested=False)
-
-        for node_id in node_ids:
-            visit(node_id, requested=True)
+            stack.extend((dependency, False) for dependency in reversed(dependencies))
         answer: ReadinessAnswer = "ready"
         for found in answers.values():
             if _ANSWER_RANK[found] > _ANSWER_RANK[answer]:
@@ -549,33 +564,31 @@ class Engine:
             if edge.to in self._nodes
         ]
 
-    def _reaches(self, target: str, starts: Iterable[str]) -> bool:
-        stack = list(starts)
-        seen: set[str] = set()
-        while stack:
-            name = stack.pop()
-            if name == target:
-                return True
-            if name in seen or name not in self._nodes:
-                continue
-            seen.add(name)
-            stack.extend(edge.to for edge in self._nodes[name].depends_on)
-        return False
-
-    def _topological(self) -> list[str]:
+    def _topological(self, nodes: Mapping[str, Node] | None = None) -> list[str]:
+        graph = self._nodes if nodes is None else nodes
         order: list[str] = []
         placed: set[str] = set()
-
-        def place(name: str) -> None:
-            if name in placed:
-                return
-            placed.add(name)
-            for dependency in self._dependencies(name):
-                place(dependency)
-            order.append(name)
-
-        for name in self._nodes:
-            place(name)
+        visiting: set[str] = set()
+        for root in graph:
+            stack = [(root, False)]
+            while stack:
+                name, expanded = stack.pop()
+                if name in placed:
+                    continue
+                if expanded:
+                    visiting.remove(name)
+                    placed.add(name)
+                    order.append(name)
+                    continue
+                if name in visiting:
+                    raise ValueError(f"an edge from {name} would close a cycle")
+                visiting.add(name)
+                stack.append((name, True))
+                stack.extend(
+                    (edge.to, False)
+                    for edge in reversed(graph[name].depends_on)
+                    if edge.to in graph
+                )
         return order
 
     def _ancestors(self, node_ids: Iterable[str]) -> set[str]:
@@ -611,8 +624,9 @@ class Engine:
             state.advance(now)
         self._windows = [window for window in self._windows if window.until > now]
         frame = self._build_frame(now)
+        if self._update_members(frame):
+            frame = self._build_frame(now)
         self._frame = frame
-        self._update_members(frame)
         self._resolve_recovered(frame)
         probes = self._gate(frame)
         self._open(frame)
@@ -683,8 +697,9 @@ class Engine:
         into.absorbed.append(state.episode_id)
         self._close(state, "absorbed", into.episode_id)
 
-    def _update_members(self, frame: _Frame) -> None:
-        """Members leave on recovery; too few left dissolves the group (ADR 0021)."""
+    def _update_members(self, frame: _Frame) -> bool:
+        """Dissolve undersized groups; report whether stale clocks restarted."""
+        rejoined = False
         for state in self._episodes.values():
             self._update_holding(state, frame)
         for state in list(self._episodes.values()):
@@ -698,10 +713,12 @@ class Engine:
                 continue
             for member in state.members:
                 self._rejoin(member, frame.now)
+                rejoined = True
             state.members.clear()
             state.members_since = None
             if state.form == "group":
                 self._close(state, "cleared")
+        return rejoined
 
     def _update_holding(self, state: _EpisodeState, frame: _Frame) -> None:
         """Rule 15: stragglers held through rejoin grace become members, or go.

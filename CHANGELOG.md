@@ -4,6 +4,16 @@ All notable changes to this project are documented here. The format follows [Kee
 
 ## [Unreleased]
 
+## [0.3.0] - 2026-09-25
+
+### Added
+
+- `Engine.register_many(nodes, now)` validates graph additions and replacements atomically and evaluates once. Scenario 74 covers rewiring with retained evidence and restart. Graph ordering and readiness handle deep dependency chains without recursion.
+
+### Fixed
+
+- Group dissolution applies rejoin stale-clock resets before emitting final events, preventing spurious stale episodes and divergent updates across restart (scenario 75).
+
 ## [0.2.0] - 2026-09-25
 
 ### Added

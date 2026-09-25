@@ -8,7 +8,7 @@ Health Tree is the layer that tells a root failure from its symptoms, says what 
 
 Home Assistant is the first consumer. Its integration, [homeostatic](docs/rfp.md#11-home-assistant-integration-later), lives in its own repository and is not part of this package.
 
-> **Status: first engine.** The engine and the attention policy pass every story and scenario fixture. The design of record is [docs/rfp.md](docs/rfp.md) (version 0.6, draft for review). ADRs 0001 to 0032 are accepted or superseded. Real observation proofs remain outstanding. Version 0.1.0 is on PyPI as `health-tree`.
+> **Status: first engine.** The engine and the attention policy pass every story and scenario fixture. The design of record is [docs/rfp.md](docs/rfp.md) (version 0.7, draft for review). ADRs 0001 to 0033 are accepted or superseded. Real observation proofs remain outstanding. Version 0.2.0 is on PyPI as `health-tree`.
 
 ## Principles
 
@@ -92,6 +92,23 @@ The door is only a device, but the `garage` function that depends on it is `high
 - The core knows nothing about batteries, add-ons, or any device. A new fault is a check registered by an adapter.
 - State survives restarts through snapshot and restore.
 - The library can't report the death of the process it runs in, so any deployment needs an external watchdog.
+
+## Registering a graph
+
+The 0.3.0 candidate adds atomic graph registration.
+
+Use `engine.register_many(nodes, now)` when an adapter discovers multiple nodes
+at once. The batch adds or replaces those nodes, keeps unchanged nodes and
+retained check state, validates the final graph, and evaluates once. Empty
+batches, duplicate node ids, cycles, and reserved redundancy groups are rejected
+without changing state or time. `register(node, now)` has the same behavior for
+one node. Apply initial evidence separately with `ingest_many`.
+
+Only register monitored capabilities and the dependencies needed to describe
+them. Healthy monitored nodes belong in the graph so they can report a later
+failure. An unmonitored requirement belongs too: its missing evidence must remain
+visible to readiness and coverage. An adapter's wider inventory need not be a
+health graph. See [ADR 0033](docs/adr/0033-atomic-graph-registration.md).
 
 ## Attention integration
 
