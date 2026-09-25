@@ -1,0 +1,30 @@
+name: Bug report
+description: The library does not behave as the RFP says.
+labels: ["bug"]
+body:
+  - type: input
+    id: version
+    attributes:
+      label: Version
+      placeholder: "0.1.0"
+    validations:
+      required: true
+  - type: input
+    id: rule
+    attributes:
+      label: RFP rule or scenario
+      description: The rule or scenario number the behavior breaks, if you know it.
+  - type: textarea
+    id: reproduce
+    attributes:
+      label: How to reproduce
+      description: The graph, the observations with their times, and the events you got. A fixture is best.
+      render: yaml
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: What you expected
+    validations:
+      required: true

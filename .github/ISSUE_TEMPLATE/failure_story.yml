@@ -1,0 +1,47 @@
+name: Failure story
+description: Something in the house broke and the system did not tell you well. Stories become the RFP's acceptance tests.
+labels: ["story"]
+body:
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What broke?
+      description: What you noticed, in plain words. "The basement light did not come on."
+    validations:
+      required: true
+  - type: textarea
+    id: cause
+    attributes:
+      label: What was the real cause?
+      description: What failed first, and what else it took down.
+    validations:
+      required: true
+  - type: textarea
+    id: found-out
+    attributes:
+      label: How did you find out?
+      description: Were you told at all? When, how, and how long did it take to trace?
+    validations:
+      required: true
+  - type: textarea
+    id: should-have
+    attributes:
+      label: What should you have been told?
+      description: The message you wish you had received, who should get it, and when. For example, "morning digest", "right away, even at night", or "only when I am at the cabin".
+    validations:
+      required: true
+  - type: dropdown
+    id: shape
+    attributes:
+      label: How did the failure show up?
+      options:
+        - Loud (went unavailable or errored)
+        - Quiet (stopped reporting)
+        - Plausible but wrong (kept reporting a normal-looking value)
+        - Latent (fine until it was used)
+        - Gradual (filling or draining)
+        - An operation did not complete
+        - Maintenance that piled up
+        - Not sure
+    validations:
+      required: true

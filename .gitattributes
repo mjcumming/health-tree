@@ -1,0 +1,10 @@
+# LF everywhere, including Windows checkouts.
+* text=auto eol=lf
+*.py whitespace=error
+
+*.ico binary
+*.jpg binary
+*.png binary
+*.zip binary
+
+uv.lock linguist-generated=true

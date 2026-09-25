@@ -1,0 +1,5 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Design of record
+    url: https://github.com/mjcumming/health-tree/blob/main/docs/rfp.md
+    about: Read the RFP before proposing a change in behavior.
