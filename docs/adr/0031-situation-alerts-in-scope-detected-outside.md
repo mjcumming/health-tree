@@ -1,6 +1,6 @@
 # ADR 0031: Situation alerts are in scope, and the library never detects them
 
-**Status:** Proposed
+**Status:** Accepted
 **Date:** 2026-09-25
 **Deciders:** Michael Cumming
 

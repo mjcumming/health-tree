@@ -6,7 +6,7 @@ Design of record for this library. A Home Assistant integration is the first con
 | --- | --- |
 | Version | 0.6 |
 | Date | 2026-09-25 |
-| Status | Draft for review, with ADRs 0024 to 0030 accepted and ADRs 0031 and 0032 proposed. A first engine and policy pass every fixture. Nothing is released until the types, stories, and scenarios are accepted. |
+| Status | Draft for review, with ADRs 0024 to 0032 accepted. A first engine and policy pass every fixture. Nothing is released until the types, stories, and scenarios are accepted. |
 | Decisions | [docs/adr](adr/README.md) |
 | Changes from 0.5 | Section 18 |
 

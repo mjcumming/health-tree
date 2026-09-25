@@ -6,7 +6,7 @@ All notable changes to this project are documented here. The format follows [Kee
 
 ### Added
 
-- ADRs 0031 and 0032, proposed: situation alerts are in scope, reported from outside the library, and modeled as edgeless nodes. Story 10 and scenarios 61 to 64 have fixtures, and they pass against the current engine and policy.
+- ADRs 0031 and 0032, accepted: situation alerts are in scope, reported from outside the library, and modeled as edgeless nodes. Story 10 and scenarios 61 to 64 have fixtures, and they pass against the current engine and policy.
 - Fixture delivery expectations can assert `silent`, to tell a second page from a silent update.
 - Public `impact`, `coverage`, and `rollup` queries with immutable result records and adapter-owned views. Query contracts and fixtures cover potential impact, evidence gaps, and counts without duplicate dependents (ADR 0029).
 - Fixture steps that register and remove nodes at runtime and shelve episodes (ADR 0030, accepted).
