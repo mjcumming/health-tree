@@ -370,6 +370,24 @@ Within each reason the first match wins, so order carries meaning:
 
 Situations need no new policy fields. In this example a `high` or `critical` situation that reports `fail` is `urgent`, and a `normal` or `low` one is `notify` and waits for quiet hours. A rule that matches `category: situation` routes them separately, and it must sit above the rules it should win against.
 
+### Starting attention and inspecting policy
+
+`policy.activate(now, context)` restarts attention for the episodes already tracked,
+without changing their ids, evidence, opening times, or age matches. It discards
+previous delivery bookkeeping, starts escalation at activation, and schedules new
+initial deliveries under the configured batch, quiet hours, shelves and digests.
+Reminder intervals start at each recipient's first actual delivery request; one recipient's quiet hours do not delay another's reminders. This prevents an
+old problem from immediately exhausting its escalation period when notifications
+are enabled. The adapter may combine activation deliveries into recipient summaries.
+Ordinary restart restores state and does not activate again.
+
+`policy.explain(episode_id)` returns the last evaluated decision, winning rule index
+(zero based), recipients, pending delivery times and attention start. It does not
+advance time or expose persistence internals. Notification `cause` is an open output
+string: `open`, `update`, `remind`, `escalate`, `activate`, or `digest`; consumers may
+use it for presentation. Quiet hours and shelves also hold reminders; a record-only
+rule never sends one. Pending reminders are coalesced, not accumulated.
+
 ## 8. Interface and queries
 
 The engine and the policy are state machines with no I/O (ADR 0003). The names below are the shape of the interface, not final signatures.
@@ -392,6 +410,8 @@ policy = Policy(config)
 policy.handle(event, now, context) -> list[Delivery]
 policy.advance(now, context) -> list[Delivery]  # digests, reminders, ends of quiet hours
 policy.shelve(episode_id, until, now) -> list[Delivery]
+policy.activate(now, context) -> list[Delivery]
+policy.explain(episode_id) -> dict
 policy.next_deadline() -> datetime | None
 policy.snapshot() -> dict
 policy.restore(state, now) -> None
@@ -518,6 +538,9 @@ Each is tagged with its area.
 62. **Engine.** A situation's episode is open. After a restart with startup grace, the episode continues with the same id. The reporter's placeholder is `unknown`, which updates the episode and does not resolve it. The reporter reports `fail` again, which is an update, not a new opening. Only `pass` resolves it.
 63. **Engine and queries.** Two situations share an area and a source label, and both hold in one call, with `coalesce_count` 2. Two root episodes open, and no group. A `high` function that depends on the source sensor stays `ready`.
 64. **Policy.** A `normal` situation opens at 23:30 and is delivered as `notify` at 07:00, when quiet hours end. A `critical` situation at 03:00 is delivered at once as `urgent`.
+
+72. **Policy.** A notify reminder becomes due during quiet hours. It waits until quiet hours end, including across snapshot/restore. An urgent reminder passes quiet hours but waits for an active shelf. A record-only rule never sends a reminder.
+73. **Policy.** Activate attention for an old open problem. Its opening time and age match are unchanged; its escalation clock starts at activation, and its reminders start with the new delivery request. Ordinary restore preserves those clocks. Initial requests carry the activation cause and respect quiet hours.
 
 ## 11. Home Assistant integration, later
 

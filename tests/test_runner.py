@@ -248,6 +248,11 @@ class ScriptedPolicy:
         """Deliver scripted digests."""
         return self.script.digests.get(now, [])
 
+    def activate(self, now: datetime, context: PolicyContext) -> list[Delivery]:
+        """Record explicit activation."""
+        self.script.calls.append(("activate", None, now))
+        return []
+
     def shelve(self, episode_id: str, until: datetime, now: datetime) -> list[Delivery]:
         """Record the shelf."""
         self.script.calls.append(("shelve", (episode_id, until), now))

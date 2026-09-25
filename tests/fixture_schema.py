@@ -455,6 +455,7 @@ def _steps(
                 "ingest",
                 "shelve",
                 "restart",
+                "activate",
                 "expect",
             },
             path,
@@ -484,6 +485,8 @@ def _steps(
             _quiet_window(step["quiet"], nodes, at, f"{path}.quiet", problems)
         if "ingest" in step:
             _ingest(step["ingest"], nodes, path, problems)
+        if "activate" in step and (step["activate"] is not True or not has_policy):
+            problems.append(f"{path}.activate requires true and a policy")
         if "restart" in step and step["restart"] is not True:
             problems.append(f"{path}.restart must be true")
         expect = step.get("expect")

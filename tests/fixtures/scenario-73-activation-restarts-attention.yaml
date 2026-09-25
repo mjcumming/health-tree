@@ -1,0 +1,48 @@
+id: scenario-73-activation-restarts-attention
+title: Activation restarts escalation without changing the episode
+covers: [scenario-73]
+start: 2026-09-25T12:00:00Z
+settings: {settle: 0s, rejoin_grace: 0s, startup_grace: 0s, coalesce_count: 3, coalesce_window: 60s}
+policy:
+  batch: 0s
+  digests: {}
+  recipients:
+    owner: {channels: [phone]}
+  rules:
+    - match: {}
+      loudness: notify
+      to: owner
+      remind_every: 30m
+      escalate_after: 1h
+graph:
+  - id: device
+    checks:
+      - {id: available, raise_hold: 0s, clear_hold: 0s, ttl: null, unknown_hold: 15m}
+steps:
+  - at: 2026-09-25T12:00:00Z
+    ingest:
+      - {node: device, check: available, status: fail, reason: unavailable}
+    expect:
+      events: [{opened: {anchor: device, episode: $problem}}]
+      bind: {problem: {opened: device}}
+      deliveries:
+        - {loudness: notify, episode: $problem, to: owner, silent: false}
+  - at: 2026-09-25T15:00:00Z
+    activate: true
+    expect:
+      events: []
+      deliveries:
+        - {loudness: notify, episode: $problem, to: owner, silent: false}
+  - at: 2026-09-25T15:20:00Z
+    restart: true
+    expect: {events: [], deliveries: []}
+  - at: 2026-09-25T15:30:00Z
+    expect:
+      events: []
+      deliveries:
+        - {loudness: notify, episode: $problem, to: owner, silent: false}
+  - at: 2026-09-25T16:00:00Z
+    expect:
+      events: []
+      deliveries:
+        - {loudness: urgent, episode: $problem, to: owner, silent: false}
