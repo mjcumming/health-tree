@@ -1,6 +1,6 @@
 # ADR 0012: Stories and scenarios are the executable spec
 
-**Status:** Accepted
+**Status:** Superseded by 0024
 **Date:** 2026-09-24
 **Deciders:** Michael Cumming
 

@@ -8,7 +8,7 @@ Health Tree is the layer that tells a root failure from its symptoms, says what 
 
 Home Assistant is the first consumer. Its integration, [homeostatic](docs/rfp.md#11-home-assistant-integration-later), lives in its own repository and is not part of this package.
 
-> **Status: first engine.** The engine and the attention policy pass every story and scenario fixture. The design of record is [docs/rfp.md](docs/rfp.md) (version 0.4, draft for review), ADRs 0024 to 0027 are still proposed, and ADR 0028 is accepted. Nothing is published to PyPI yet.
+> **Status: first engine.** The engine and the attention policy pass every story and scenario fixture. The design of record is [docs/rfp.md](docs/rfp.md) (version 0.4, draft for review), ADRs through 0028 are accepted except 0016. Nothing is published to PyPI yet.
 
 ## Principles
 

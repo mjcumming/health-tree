@@ -1,6 +1,6 @@
 # ADR 0026: Checks start unknown at registration
 
-**Status:** Proposed
+**Status:** Accepted
 **Date:** 2026-09-24
 **Deciders:** Michael Cumming
 

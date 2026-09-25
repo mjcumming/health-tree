@@ -1,6 +1,6 @@
 # ADR 0023: Readiness reads observed status, and stale is not a failure
 
-**Status:** Accepted
+**Status:** Superseded by 0025
 **Date:** 2026-09-24
 **Deciders:** Michael Cumming
 

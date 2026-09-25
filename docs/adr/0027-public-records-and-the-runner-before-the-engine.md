@@ -1,6 +1,6 @@
 # ADR 0027: Public records, interface stubs, and the fixture runner come before the engine
 
-**Status:** Proposed
+**Status:** Accepted
 **Date:** 2026-09-24
 **Deciders:** Michael Cumming
 

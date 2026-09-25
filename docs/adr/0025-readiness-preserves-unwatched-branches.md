@@ -1,10 +1,10 @@
 # ADR 0025: Readiness preserves every unwatched dependency branch
 
-**Status:** Proposed
+**Status:** Accepted
 **Date:** 2026-09-24
 **Deciders:** Michael Cumming
 
-Supersedes ADR 0023 when accepted, retaining its observed-status and stale-data rules.
+Supersedes ADR 0023, retaining its observed-status and stale-data rules.
 
 ## Context
 

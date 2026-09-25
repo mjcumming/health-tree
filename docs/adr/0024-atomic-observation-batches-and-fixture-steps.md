@@ -1,10 +1,10 @@
 # ADR 0024: Observation batches and fixture steps are explicit
 
-**Status:** Proposed
+**Status:** Accepted
 **Date:** 2026-09-24
 **Deciders:** Michael Cumming
 
-Supersedes ADR 0012 when accepted. The fixture approach and its invariants are retained; this decision defines how observations become engine calls.
+Supersedes ADR 0012. The fixture approach and its invariants are retained; this decision defines how observations become engine calls.
 
 ## Context
 

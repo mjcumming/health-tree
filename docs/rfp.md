@@ -6,7 +6,7 @@ Design of record for this library. A Home Assistant integration is the first con
 | --- | --- |
 | Version | 0.4 |
 | Date | 2026-09-24 |
-| Status | Draft for review, including proposed ADRs 0024 to 0027 and accepted ADR 0028. A first engine and policy pass every fixture. Nothing is released until the types, stories, and scenarios are accepted. |
+| Status | Draft for review, with ADRs 0024 to 0028 accepted. A first engine and policy pass every fixture. Nothing is released until the types, stories, and scenarios are accepted. |
 | Decisions | [docs/adr](adr/README.md) |
 | Changes from 0.3 | Section 16 |
 
@@ -232,7 +232,7 @@ These are the rules from the health-tree design, restated as library law.
 4. A check with no fresh observation within `ttl` is `unknown`.
 5. A checker that cannot run submits `unknown`, not `fail`.
 
-A registered check starts `unknown`, with its `unknown_hold` measured from registration, even when `ttl` is `None`. The first `pass` takes effect immediately if the check has never reported `warn` or `fail` and has not become stale; clearing a known problem still requires `clear_hold`. An adapter registers a command check when it can establish its initial condition. A `pass` meaning no command is outstanding is valid only for that command-verification capability; it is not evidence that the device is reachable. There is no implicit passing or inactive state. See proposed ADR 0026.
+A registered check starts `unknown`, with its `unknown_hold` measured from registration, even when `ttl` is `None`. The first `pass` takes effect immediately if the check has never reported `warn` or `fail` and has not become stale; clearing a known problem still requires `clear_hold`. An adapter registers a command check when it can establish its initial condition. A `pass` meaning no command is outstanding is valid only for that command-verification capability; it is not evidence that the device is reachable. There is no implicit passing or inactive state. See ADR 0026.
 
 ### Inhibition
 
@@ -352,7 +352,7 @@ Within each reason the first match wins, so order carries meaning:
 
 The engine and the policy are state machines with no I/O (ADR 0003). The names below are the shape of the interface, not final signatures.
 
-The library requires every duration it uses. It does not fill in a missing one (ADR 0018). `settle`, `rejoin_grace`, startup grace, `coalesce_count`, and `coalesce_window` are engine settings. `batch` is policy configuration. `raise_hold`, `clear_hold`, `ttl`, and `unknown_hold` are fields on every check, set per check by the catalog. `ttl` may be `None`, said explicitly, to disable observation expiry; an unknown check still uses `unknown_hold` (proposed ADR 0026). The integration supplies all of them, and its UI is where the owner changes them. Fixtures in this repository pass the numbers they need. Those numbers are test input, not product defaults.
+The library requires every duration it uses. It does not fill in a missing one (ADR 0018). `settle`, `rejoin_grace`, startup grace, `coalesce_count`, and `coalesce_window` are engine settings. `batch` is policy configuration. `raise_hold`, `clear_hold`, `ttl`, and `unknown_hold` are fields on every check, set per check by the catalog. `ttl` may be `None`, said explicitly, to disable observation expiry; an unknown check still uses `unknown_hold` (ADR 0026). The integration supplies all of them, and its UI is where the owner changes them. Fixtures in this repository pass the numbers they need. Those numbers are test input, not product defaults.
 
 ```python
 engine = Engine(settings, new_id=None)          # required durations; optional id factory (ADR 0017)
@@ -375,9 +375,9 @@ policy.snapshot() -> dict
 policy.restore(state, now) -> None
 ```
 
-`ingest_many` validates a non-empty batch before applying any of it, rejects repeated `(node_id, check_id)` pairs, then applies all observations and evaluates once. `ingest` is equivalent to a one-observation batch. The batch's intermediate states emit no events. Each affected episode emits only its final opening, update, or resolution for that call; one `advance` likewise evaluates all deadlines due at `now` together. Events returned by an earlier call remain part of the history. Separate arrivals may therefore open child episodes that a later call absorbs. The adapter must not wait to accumulate unrelated arrivals into a batch. See proposed ADR 0024.
+`ingest_many` validates a non-empty batch before applying any of it, rejects repeated `(node_id, check_id)` pairs, then applies all observations and evaluates once. `ingest` is equivalent to a one-observation batch. The batch's intermediate states emit no events. Each affected episode emits only its final opening, update, or resolution for that call; one `advance` likewise evaluates all deadlines due at `now` together. Events returned by an earlier call remain part of the history. Separate arrivals may therefore open child episodes that a later call absorbs. The adapter must not wait to accumulate unrelated arrivals into a batch. See ADR 0024.
 
-In fixtures, a step's `ingest` list is one call to `ingest_many`, with `observed_at` equal to the step's `at`. The runner first calls `engine.advance(at)`, then applies the step, and keeps the complete events from both calls. It feeds those events to the policy in order before calling `policy.advance(at, context)`. A batch cannot erase an event from the preceding `advance`. A step may also open a quiet window, after `advance` and before the batch. Proposed ADR 0027 gives the full order and the record shapes. Fixtures with staggered steps exercise separate arrivals, including any notifications already delivered.
+In fixtures, a step's `ingest` list is one call to `ingest_many`, with `observed_at` equal to the step's `at`. The runner first calls `engine.advance(at)`, then applies the step, and keeps the complete events from both calls. It feeds those events to the policy in order before calling `policy.advance(at, context)`. A batch cannot erase an event from the preceding `advance`. A step may also open a quiet window, after `advance` and before the batch. ADR 0027 gives the full order and the record shapes. Fixtures with staggered steps exercise separate arrivals, including any notifications already delivered.
 
 Queries are read-only:
 
@@ -385,7 +385,7 @@ Queries are read-only:
 | --- | --- |
 | `explain(node_id)` | Why is this node or function not working? Its non-pass checks, then every non-pass node it depends on, roots first |
 | `impact(node_id)` | What does this node take down? Its dependents, with importance |
-| `readiness(node_ids)` | Can these functions perform as required, per IEC 60050-192? It reads `own` status only: episodes, muting, quiet windows, and shelving do not change the answer, and checks with `affects_own` false do not count. It considers each function's own affecting checks and every node the function depends on, directly or not. `ready` when all required evidence is `pass`. `degraded` when one is `warn`. `blocked` when one is `fail`. `unknown` when one is `unknown`, stale or not: the library cannot tell, and does not guess. A stale node is named with reason `stale`. A node with no affecting checks and with dependencies is looked through; its own `unknown` does not count, but every branch beneath it still does. A node with no affecting checks and no dependencies is an unwatched terminal requirement and contributes `unknown`, even if another branch or the function's own checks pass. When the function and everything beneath it lack affecting checks, the answer names all those unwatched nodes. The worst answer wins, in the order `blocked`, `degraded`, `unknown`, `ready`; a known warning does not establish that an unknown branch works. Only causes are named, roots first. A node whose state a failed dependency explains is left out, because its own hardware may be fine: when the Eero node is down, the speakers behind it are not named. `explain` shows the whole chain. A blocked function says whether its own checks fail or a dependency does, which IEV 192-02-23 calls an externally disabled state. See proposed ADR 0025, which supersedes ADR 0023 when accepted. |
+| `readiness(node_ids)` | Can these functions perform as required, per IEC 60050-192? It reads `own` status only: episodes, muting, quiet windows, and shelving do not change the answer, and checks with `affects_own` false do not count. It considers each function's own affecting checks and every node the function depends on, directly or not. `ready` when all required evidence is `pass`. `degraded` when one is `warn`. `blocked` when one is `fail`. `unknown` when one is `unknown`, stale or not: the library cannot tell, and does not guess. A stale node is named with reason `stale`. A node with no affecting checks and with dependencies is looked through; its own `unknown` does not count, but every branch beneath it still does. A node with no affecting checks and no dependencies is an unwatched terminal requirement and contributes `unknown`, even if another branch or the function's own checks pass. When the function and everything beneath it lack affecting checks, the answer names all those unwatched nodes. The worst answer wins, in the order `blocked`, `degraded`, `unknown`, `ready`; a known warning does not establish that an unknown branch works. Only causes are named, roots first. A node whose state a failed dependency explains is left out, because its own hardware may be fine: when the Eero node is down, the speakers behind it are not named. `explain` shows the whole chain. A blocked function says whether its own checks fail or a dependency does, which IEV 192-02-23 calls an externally disabled state. See ADR 0025, which supersedes ADR 0023. |
 | `coverage()` | What is not watched? Nodes with no checks, checks never observed, checks stale |
 | `rollup(view, group)` | Counts by `own` status and inhibition for one group of one view: clear, own episode, or recorded on another. Each node is counted once |
 
@@ -579,12 +579,12 @@ The library is done when:
 
 ## 16. Changes from 0.3
 
-- Explicit atomic `ingest_many` and one-observation `ingest`, with complete event histories across calls and a defined fixture runner order (proposed ADR 0024).
-- Readiness retains unknown terminal requirements in partially watched graphs, including evidence-only checks (proposed ADR 0025).
-- Checks start unknown at registration. `ttl: None` disables expiry, not the initial unknown hold. Initial passing observations and recovery holds are explicit (proposed ADR 0026).
+- Explicit atomic `ingest_many` and one-observation `ingest`, with complete event histories across calls and a defined fixture runner order (ADR 0024).
+- Readiness retains unknown terminal requirements in partially watched graphs, including evidence-only checks (ADR 0025).
+- Checks start unknown at registration. `ttl: None` disables expiry, not the initial unknown hold. Initial passing observations and recovery holds are explicit (ADR 0026).
 - Scenario 44 initializes its command check. Scenarios 53 to 56 cover atomic and staggered observations, partial coverage, and unobserved commands.
 - Observation proofs distinguish integration state writes from fresh device evidence and require failure and recovery traces.
-- Public record shapes, interface stubs, and the fixture runner land before the engine. A fixture step can open a quiet window, and scenario 49 has a fixture (proposed ADR 0027).
+- Public record shapes, interface stubs, and the fixture runner land before the engine. A fixture step can open a quiet window, and scenario 49 has a fixture (ADR 0027).
 - A first engine and policy pass every fixture. The semantics this RFP left open are recorded in ADR 0028. Fixtures are added for scenarios 1 to 6, 8 to 11, 13, 15 to 17, 20, 22, 23, 25, 28 to 31, 34, 37, and 40 to 42.
 - Rule 15: an episode whose anchor recovers holds the nodes it muted that still fail through their rejoin grace, instead of sending a premature all-clear. Scenario 4 is restated.
 - Readiness names causes only. A node whose state a failed dependency explains is left out. Scenarios 34 and 49 are restated.

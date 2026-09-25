@@ -28,7 +28,7 @@ type QuietScope = Literal["all", "node", "node_and_dependents"]
 """What a quiet window covers (rule 22)."""
 
 type ReadinessAnswer = Literal["ready", "degraded", "unknown", "blocked"]
-"""The answer to a readiness query (ADR 0023)."""
+"""The answer to a readiness query (ADR 0025)."""
 
 type BlockedBy = Literal["own", "dependency"]
 """Whether a blocked function fails on its own checks or through a dependency."""
@@ -316,7 +316,7 @@ class Explanation:
 
 @dataclass(frozen=True, slots=True, kw_only=True)
 class Readiness:
-    """Whether functions can perform as required (ADR 0023).
+    """Whether functions can perform as required (ADR 0025).
 
     `nodes` names the nodes responsible for the answer, roots first.
     """

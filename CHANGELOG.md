@@ -6,8 +6,8 @@ All notable changes to this project are documented here. The format follows [Kee
 
 ### Added
 
-- Proposed ADRs 0024 to 0026 and scenario fixtures 53 to 56 for atomic and staggered ingestion, partial readiness coverage, and initially unknown command checks.
-- `health_tree.types`, the public records: fixed types, settings, nodes, checks, observations, episodes, events, quiet windows, query results, policy configuration, and deliveries (proposed ADR 0027).
+- ADRs 0024 to 0026 and scenario fixtures 53 to 56 for atomic and staggered ingestion, partial readiness coverage, and initially unknown command checks.
+- `health_tree.types`, the public records: fixed types, settings, nodes, checks, observations, episodes, events, quiet windows, query results, policy configuration, and deliveries (ADR 0027).
 - `Engine` and `Policy` with their RFP section 8 signatures. Every method raises `NotImplementedError` until the engine is written.
 - The fixture runner, tested against a scripted engine. Every fixture now runs, and a strict xfail marks each one the engine does not pass yet.
 - A quiet-window fixture step, and a fixture for scenario 49.
@@ -37,11 +37,12 @@ All notable changes to this project are documented here. The format follows [Kee
 
 ### Changed
 
+- ADRs 0024 to 0028 are accepted. ADR 0012 is superseded by 0024, and ADR 0023 by 0025.
 - Rule 15: when an anchor recovers while nodes it muted still fail, its episode holds them through rejoin grace instead of sending an all-clear. They then become members, or each opens its own episode (scenario 4).
 - Readiness names causes only. Hardware behind a failed dependency is not named, and `explain` shows the chain (scenarios 34 and 49).
 - The README is expanded: the problem, principles, model, a worked example from story 8, design constraints, repository layout, and a documentation map.
 - The README states that a delivery names the episode, recipient, loudness, and channel names, and that the integration carries those channels out.
-- RFP 0.4 defines atomic observation batches, preserves unwatched readiness branches, specifies check initialization, and tightens the real-device evidence required for freshness proofs. ADRs 0024 to 0026 remain proposed; accepted ADRs have not been silently replaced.
+- RFP 0.4 defines atomic observation batches, preserves unwatched readiness branches, specifies check initialization, and tightens the real-device evidence required for freshness proofs. ADRs 0024 to 0026 cover them.
 - Scenario 44 now initializes its command check before testing mixed-reason routing. Group fixtures assert recorded members and absorbed ids.
 - README and package documentation now point to RFP 0.4.
 - RFP 0.3 settles the review of 0.2 (RFP section 15):

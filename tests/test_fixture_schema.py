@@ -70,7 +70,7 @@ def test_checked_in_fixtures_match_the_schema() -> None:
 
 
 def test_schema_accepts_disabled_observation_expiry() -> None:
-    """Null `ttl` disables observation expiry (ADR 0018 and proposed ADR 0026)."""
+    """Null `ttl` disables observation expiry (ADRs 0018 and 0026)."""
     document = yaml.safe_load(
         (FIXTURES / "scenario-14-parent-confirmed-inside-settle.yaml").read_text(
             encoding="utf-8"
@@ -138,7 +138,7 @@ def test_schema_rejects_a_naive_clock() -> None:
 def test_schema_rejects_a_bad_readiness_query(
     spec: dict[str, object], message: str
 ) -> None:
-    """A readiness expectation names a real answer and real nodes (ADR 0023)."""
+    """A readiness expectation names a real answer and real nodes (ADR 0025)."""
     filename = "scenario-50-readiness-own-fault.yaml"
     document = yaml.safe_load((FIXTURES / filename).read_text(encoding="utf-8"))
     document["steps"][0]["expect"]["queries"]["readiness"]["f_own"] = spec
