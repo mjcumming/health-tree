@@ -1,4 +1,4 @@
-"""Validate health-tree YAML fixtures against the RFP 0.4 draft and ADR 0024.
+"""Validate health-tree YAML fixtures against the RFP 0.5 draft and ADR 0024.
 
 It checks structure only. `tests/runner.py` runs the fixtures against the engine.
 """
@@ -94,7 +94,17 @@ def validate_fixture(document: object, *, filename: str) -> None:
     )
     _reject_unknown(
         data,
-        {"id", "title", "covers", "start", "settings", "policy", "graph", "steps"},
+        {
+            "id",
+            "title",
+            "covers",
+            "start",
+            "settings",
+            "policy",
+            "graph",
+            "views",
+            "steps",
+        },
         filename,
         problems,
     )
@@ -108,11 +118,13 @@ def validate_fixture(document: object, *, filename: str) -> None:
     if "policy" in data:
         _policy(data.get("policy"), filename, problems)
     nodes = _graph(data.get("graph"), filename, problems)
+    views = _views(data.get("views", {}), nodes, f"{filename}: views", problems)
     _steps(
         data.get("steps"),
         filename=filename,
         start=start,
         nodes=nodes,
+        views=views,
         has_policy="policy" in data,
         problems=problems,
     )
@@ -418,6 +430,7 @@ def _steps(
     filename: str,
     start: datetime | None,
     nodes: dict[str, set[str]],
+    views: dict[str, set[str]],
     has_policy: bool,
     problems: list[str],
 ) -> None:
@@ -454,7 +467,7 @@ def _steps(
         if not isinstance(expect, dict):
             problems.append(f"{path}.expect must be a mapping")
             continue
-        _expect(expect, path, nodes, bound, has_policy, problems)
+        _expect(expect, path, nodes, views, bound, has_policy, problems)
 
 
 def _quiet_window(
@@ -526,6 +539,7 @@ def _expect(
     expect: dict[str, Any],
     where: str,
     nodes: dict[str, set[str]],
+    views: dict[str, set[str]],
     bound: set[str],
     has_policy: bool,
     problems: list[str],
@@ -554,7 +568,7 @@ def _expect(
     if "open" in expect:
         _open(expect["open"], nodes, bound, f"{path}.open", problems)
     if "queries" in expect:
-        _queries(expect["queries"], nodes, f"{path}.queries", problems)
+        _queries(expect["queries"], nodes, views, f"{path}.queries", problems)
 
 
 def _bind(
@@ -737,17 +751,154 @@ def _open(
 def _queries(
     value: object,
     nodes: dict[str, set[str]],
+    views: dict[str, set[str]],
     where: str,
     problems: list[str],
 ) -> None:
     if not isinstance(value, dict) or not value:
         problems.append(f"{where} must be a non-empty mapping")
         return
-    _reject_unknown(value, {"explain", "readiness"}, where, problems)
+    _reject_unknown(
+        value, {"explain", "readiness", "impact", "coverage", "rollup"}, where, problems
+    )
     if "explain" in value:
         _explain(value["explain"], nodes, f"{where}.explain", problems)
     if "readiness" in value:
         _readiness(value["readiness"], nodes, f"{where}.readiness", problems)
+    if "impact" in value:
+        _impact(value["impact"], nodes, f"{where}.impact", problems)
+    if "coverage" in value:
+        _coverage(value["coverage"], nodes, f"{where}.coverage", problems)
+    if "rollup" in value:
+        _rollup(value["rollup"], views, f"{where}.rollup", problems)
+
+
+def _node_ids(
+    value: object, nodes: dict[str, set[str]], where: str, problems: list[str]
+) -> None:
+    if not isinstance(value, list) or any(
+        not isinstance(name, str) or name not in nodes for name in value
+    ):
+        problems.append(f"{where} must be registered node ids")
+
+
+def _views(
+    value: object, nodes: dict[str, set[str]], where: str, problems: list[str]
+) -> dict[str, set[str]]:
+    result: dict[str, set[str]] = {}
+    if not isinstance(value, dict):
+        problems.append(f"{where} must be a mapping")
+        return result
+    for name, groups in value.items():
+        _string(name, where, problems)
+        if not isinstance(name, str) or not isinstance(groups, dict):
+            problems.append(f"{where}.{name} must be a mapping of groups")
+            continue
+        result[name] = set()
+        for group, members in groups.items():
+            _string(group, f"{where}.{name}", problems)
+            if isinstance(group, str):
+                result[name].add(group)
+            _node_ids(members, nodes, f"{where}.{name}.{group}", problems)
+    return result
+
+
+def _impact(
+    value: object, nodes: dict[str, set[str]], where: str, problems: list[str]
+) -> None:
+    if not isinstance(value, dict):
+        problems.append(f"{where} must be a mapping")
+        return
+    for name, spec in value.items():
+        path = f"{where}.{name}"
+        if name not in nodes:
+            problems.append(f"{path} is not a node")
+        if not isinstance(spec, dict):
+            problems.append(f"{path} must be a mapping")
+            continue
+        _reject_unknown(spec, {"nodes", "importance"}, path, problems)
+        if spec.get("importance") not in _IMPORTANCE:
+            problems.append(f"{path}.importance is not an importance")
+        members = spec.get("nodes")
+        if not isinstance(members, list):
+            problems.append(f"{path}.nodes must be a list")
+            continue
+        for member in members:
+            if not isinstance(member, dict) or set(member) != {"node", "importance"}:
+                problems.append(f"{path}.nodes must list node and importance")
+                continue
+            if member["node"] not in nodes or member["importance"] not in _IMPORTANCE:
+                problems.append(f"{path}.nodes must name nodes with valid importance")
+
+
+def _coverage(
+    value: object, nodes: dict[str, set[str]], where: str, problems: list[str]
+) -> None:
+    if not isinstance(value, dict):
+        problems.append(f"{where} must be a mapping")
+        return
+    fields = {"no_checks", "never_observed", "stale"}
+    _require_keys(value, fields, where, problems)
+    _reject_unknown(value, fields, where, problems)
+    _node_ids(value.get("no_checks"), nodes, f"{where}.no_checks", problems)
+    for field in ("never_observed", "stale"):
+        refs = value.get(field)
+        if not isinstance(refs, list):
+            problems.append(f"{where}.{field} must be a list")
+            continue
+        for ref in refs:
+            if not isinstance(ref, dict) or set(ref) != {"node", "check"}:
+                problems.append(f"{where}.{field} must list node and check")
+                continue
+            node, check = ref["node"], ref["check"]
+            if (
+                not isinstance(node, str)
+                or node not in nodes
+                or not isinstance(check, str)
+                or check not in nodes[node]
+            ):
+                problems.append(f"{where}.{field} must name registered checks")
+
+
+def _rollup(
+    value: object, views: dict[str, set[str]], where: str, problems: list[str]
+) -> None:
+    if not isinstance(value, dict):
+        problems.append(f"{where} must be a mapping")
+        return
+    for name, groups in value.items():
+        if name not in views or not isinstance(groups, dict):
+            problems.append(f"{where}.{name} must name a view and map its groups")
+            continue
+        for group, spec in groups.items():
+            path = f"{where}.{name}.{group}"
+            if group not in views[name]:
+                problems.append(f"{path} is not a group")
+            if not isinstance(spec, dict):
+                problems.append(f"{path} must be a mapping")
+                continue
+            _reject_unknown(spec, {"total", "counts"}, path, problems)
+            _count(spec.get("total"), f"{path}.total", problems)
+            counts = spec.get("counts")
+            if not isinstance(counts, dict):
+                problems.append(f"{path}.counts must be a mapping")
+                continue
+            _reject_unknown(counts, _STATUS, f"{path}.counts", problems)
+            for status, row in counts.items():
+                row_path = f"{path}.counts.{status}"
+                if not isinstance(row, dict):
+                    problems.append(f"{row_path} must be a mapping")
+                    continue
+                _reject_unknown(
+                    row, {"clear", "own_episode", "recorded"}, row_path, problems
+                )
+                for key, count in row.items():
+                    _count(count, f"{row_path}.{key}", problems)
+
+
+def _count(value: object, where: str, problems: list[str]) -> None:
+    if not isinstance(value, int) or isinstance(value, bool) or value < 0:
+        problems.append(f"{where} must be a non-negative integer")
 
 
 def _explain(

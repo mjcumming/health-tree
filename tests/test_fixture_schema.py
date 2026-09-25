@@ -45,6 +45,7 @@ def test_checked_in_fixtures_match_the_schema() -> None:
         "scenario-30-maintenance-reminded-then-escalated.yaml",
         "scenario-31-due-within-matches-warn.yaml",
         "scenario-34-readiness-names-causes.yaml",
+        "scenario-35-coverage-evidence-gaps.yaml",
         "scenario-36-readiness-answers.yaml",
         "scenario-37-rejoin-restarts-stale-clocks.yaml",
         "scenario-40-critical-failure-with-deadline-pages.yaml",
@@ -64,6 +65,9 @@ def test_checked_in_fixtures_match_the_schema() -> None:
         "scenario-54-staggered-failures-urgent.yaml",
         "scenario-55-readiness-mixed-coverage.yaml",
         "scenario-56-command-initially-unknown.yaml",
+        "scenario-57-potential-impact.yaml",
+        "scenario-58-view-rollup.yaml",
+        "scenario-59-group-rollup.yaml",
         "story-04-battery-digest.yaml",
         "story-08-garage-door.yaml",
     ]
@@ -80,6 +84,107 @@ def test_schema_accepts_disabled_observation_expiry() -> None:
     validate_fixture(
         document, filename="scenario-14-parent-confirmed-inside-settle.yaml"
     )
+
+
+@pytest.mark.parametrize(
+    ("query", "spec", "message"),
+    [
+        pytest.param("coverage", [], "must be a mapping", id="coverage-shape"),
+        pytest.param("coverage", {}, "missing", id="coverage-fields"),
+        pytest.param(
+            "coverage",
+            {"no_checks": ["missing"], "never_observed": [], "stale": []},
+            "registered node ids",
+            id="coverage-unknown-node",
+        ),
+        pytest.param(
+            "coverage",
+            {
+                "no_checks": [],
+                "never_observed": [{"node": "a", "check": "absent"}],
+                "stale": [],
+            },
+            "registered checks",
+            id="coverage-unknown-check",
+        ),
+        pytest.param("impact", [], "must be a mapping", id="impact-shape"),
+        pytest.param(
+            "impact",
+            {"missing": {"nodes": [], "importance": "normal"}},
+            "not a node",
+            id="impact-unknown-node",
+        ),
+        pytest.param(
+            "impact",
+            {"a": {"nodes": [], "importance": "urgent"}},
+            "not an importance",
+            id="impact-loudness",
+        ),
+        pytest.param(
+            "impact",
+            {"a": {"nodes": [{"node": "device"}], "importance": "normal"}},
+            "node and importance",
+            id="impact-incomplete-member",
+        ),
+        pytest.param("rollup", [], "must be a mapping", id="rollup-shape"),
+        pytest.param(
+            "rollup",
+            {"absent": {}},
+            "must name a view",
+            id="rollup-unknown-view",
+        ),
+        pytest.param(
+            "rollup",
+            {"location": {"absent": {"total": 0, "counts": {}}}},
+            "not a group",
+            id="rollup-unknown-group",
+        ),
+        pytest.param(
+            "rollup",
+            {"location": {"all": {"total": True, "counts": {}}}},
+            "non-negative integer",
+            id="rollup-boolean-total",
+        ),
+        pytest.param(
+            "rollup",
+            {"location": {"all": {"total": 5, "counts": {"fail": {"recorded": -1}}}}},
+            "non-negative integer",
+            id="rollup-negative-count",
+        ),
+        pytest.param(
+            "rollup",
+            {"location": {"all": {"total": 5, "counts": {"healthy": {"clear": 5}}}}},
+            "unknown keys healthy",
+            id="rollup-unknown-status",
+        ),
+    ],
+)
+def test_schema_rejects_invalid_summary_queries(
+    query: str, spec: object, message: str
+) -> None:
+    """Malformed expected results cannot silently weaken a query fixture."""
+    filename = "scenario-58-view-rollup.yaml"
+    document = yaml.safe_load((FIXTURES / filename).read_text(encoding="utf-8"))
+    document["steps"][0]["expect"]["queries"] = {query: spec}
+    with pytest.raises(FixtureSchemaError, match=message):
+        validate_fixture(document, filename=filename)
+
+
+@pytest.mark.parametrize(
+    "views",
+    [
+        pytest.param([], id="not-a-mapping"),
+        pytest.param({"location": []}, id="groups-not-a-mapping"),
+        pytest.param({"location": {"all": ["absent"]}}, id="unknown-member"),
+    ],
+)
+def test_schema_rejects_invalid_views(views: object) -> None:
+    """Fixture views must declare groups of known node ids."""
+    filename = "scenario-58-view-rollup.yaml"
+    document = yaml.safe_load((FIXTURES / filename).read_text(encoding="utf-8"))
+    document["views"] = views
+    with pytest.raises(FixtureSchemaError, match="views"):
+        validate_fixture(document, filename=filename)
 
 
 def test_schema_requires_unknown_hold() -> None:

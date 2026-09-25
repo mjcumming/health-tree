@@ -6,6 +6,8 @@ All notable changes to this project are documented here. The format follows [Kee
 
 ### Added
 
+- Public `impact`, `coverage`, and `rollup` queries with immutable result records and adapter-owned views. Query contracts and fixtures cover potential impact, evidence gaps, and counts without duplicate dependents (ADR 0029).
+- RFP 0.5 specifies public query contracts and scenarios 57 to 60. Scenario 35 now has a coverage fixture, and the fixture runner supports all five queries.
 - ADRs 0024 to 0026 and scenario fixtures 53 to 56 for atomic and staggered ingestion, partial readiness coverage, and initially unknown command checks.
 - `health_tree.types`, the public records: fixed types, settings, nodes, checks, observations, episodes, events, quiet windows, query results, policy configuration, and deliveries (ADR 0027).
 - `Engine` and `Policy` with their RFP section 8 signatures. Every method raises `NotImplementedError` until the engine is written.
@@ -37,6 +39,7 @@ All notable changes to this project are documented here. The format follows [Kee
 
 ### Changed
 
+- ADR 0029 is accepted: public query records and adapter-owned views.
 - ADRs 0016 and 0024 to 0028 are accepted. ADR 0012 is superseded by 0024, and ADR 0023 by 0025.
 - Rule 15: when an anchor recovers while nodes it muted still fail, its episode holds them through rejoin grace instead of sending an all-clear. They then become members, or each opens its own episode (scenario 4).
 - Readiness names causes only. Hardware behind a failed dependency is not named, and `explain` shows the chain (scenarios 34 and 49).

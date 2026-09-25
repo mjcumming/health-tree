@@ -1,0 +1,43 @@
+id: scenario-57-potential-impact
+title: Potential impact counts a shared function once without waiting for failure
+covers: [scenario-57]
+start: 2026-09-24T12:00:00Z
+settings:
+  settle: 0s
+  rejoin_grace: 0s
+  startup_grace: 0s
+  coalesce_count: 3
+  coalesce_window: 60s
+graph:
+  - id: root
+    importance: low
+    checks:
+      - {id: state, raise_hold: 0s, clear_hold: 0s, ttl: null, unknown_hold: 15m}
+  - id: left
+    importance: high
+    depends_on: [root]
+  - id: right
+    depends_on: [root]
+  - id: function
+    importance: critical
+    depends_on: [left, right]
+  - id: unrelated
+    importance: critical
+steps:
+  - at: 2026-09-24T12:00:00Z
+    ingest:
+      - {node: root, check: state, status: pass, reason: ok}
+    expect:
+      events: []
+      queries:
+        impact:
+          root:
+            importance: critical
+            nodes:
+              - {node: left, importance: high}
+              - {node: right, importance: normal}
+              - {node: function, importance: critical}
+          function: {importance: critical, nodes: []}
+          right:
+            importance: critical
+            nodes: [{node: function, importance: critical}]

@@ -14,6 +14,8 @@ import pytest
 import yaml
 
 from health_tree.types import (
+    CheckReference,
+    Coverage,
     Delivery,
     EngineSettings,
     Episode,
@@ -22,6 +24,8 @@ from health_tree.types import (
     Event,
     Explanation,
     Finding,
+    Impact,
+    ImpactNode,
     Importance,
     JSONValue,
     Loudness,
@@ -36,10 +40,14 @@ from health_tree.types import (
     Readiness,
     Resolution,
     ResolutionNotice,
+    Rollup,
+    RollupCounts,
     Status,
+    View,
 )
 from tests.runner import (
     EngineLike,
+    Fixture,
     FixtureMismatch,
     PolicyLike,
     load_fixture,
@@ -47,6 +55,31 @@ from tests.runner import (
 )
 
 FIXTURES = Path(__file__).parent / "fixtures"
+
+QUERY_IMPACT = Impact(
+    node_id="root",
+    nodes=(
+        ImpactNode(node_id="left", importance=Importance.HIGH),
+        ImpactNode(node_id="right", importance=Importance.NORMAL),
+        ImpactNode(node_id="function", importance=Importance.CRITICAL),
+    ),
+    importance=Importance.CRITICAL,
+)
+QUERY_COVERAGE = Coverage(
+    no_checks=("left", "right", "function", "unrelated"),
+    never_observed=(CheckReference(node_id="root", check_id="state"),),
+    stale=(),
+)
+QUERY_ROLLUP = Rollup(
+    view_id="inventory",
+    group="all",
+    counts=(
+        RollupCounts(own=Status.PASS, clear=0, own_episode=0, recorded=0),
+        RollupCounts(own=Status.UNKNOWN, clear=5, own_episode=0, recorded=0),
+        RollupCounts(own=Status.WARN, clear=0, own_episode=0, recorded=0),
+        RollupCounts(own=Status.FAIL, clear=0, own_episode=0, recorded=0),
+    ),
+)
 
 
 def _at(hour: int, minute: int, second: int = 0) -> datetime:
@@ -116,6 +149,11 @@ class Script:
     events: dict[tuple[str, datetime], list[Event]] = field(default_factory=dict)
     explanations: dict[str, Explanation] = field(default_factory=dict)
     readiness: dict[tuple[str, datetime], Readiness] = field(default_factory=dict)
+    impacts: dict[str, Impact] = field(default_factory=dict)
+    coverage: Coverage = field(
+        default_factory=lambda: Coverage(no_checks=(), never_observed=(), stale=())
+    )
+    rollups: dict[tuple[str, str], Rollup] = field(default_factory=dict)
     on_event: dict[tuple[str, str], list[Delivery]] = field(default_factory=dict)
     digests: dict[datetime, list[Delivery]] = field(default_factory=dict)
     snapshot: dict[str, JSONValue] = field(default_factory=lambda: {"schema": 1})
@@ -171,6 +209,18 @@ class ScriptedEngine:
         (node_id,) = node_ids
         return self.script.readiness[node_id, self.script.now]
 
+    def impact(self, node_id: str) -> Impact:
+        """Return the scripted dependents and importance."""
+        return self.script.impacts[node_id]
+
+    def coverage(self) -> Coverage:
+        """Return the scripted evidence gaps."""
+        return self.script.coverage
+
+    def rollup(self, view: View, group: str) -> Rollup:
+        """Return the scripted counts for a named group."""
+        return self.script.rollups[view.view_id, group]
+
 
 class ScriptedPolicy:
     """Returns scripted deliveries for each event and each `advance`."""
@@ -215,6 +265,151 @@ def _run(name: str, script: Script) -> None:
         engine_factory=engine,
         policy_factory=policy,
     )
+
+
+def _query_fixture() -> Fixture:
+    fixture = load_fixture(FIXTURES / "scenario-57-potential-impact.yaml")
+    return replace(
+        fixture,
+        views={
+            "inventory": View(
+                view_id="inventory",
+                groups={"all": frozenset(node.node_id for node in fixture.nodes)},
+            )
+        },
+        steps=(
+            replace(
+                fixture.steps[0],
+                ingest=(),
+                expect={
+                    "events": [],
+                    "queries": {
+                        "impact": {
+                            "root": {
+                                "importance": "critical",
+                                "nodes": [
+                                    {"node": "left", "importance": "high"},
+                                    {"node": "right", "importance": "normal"},
+                                    {"node": "function", "importance": "critical"},
+                                ],
+                            }
+                        },
+                        "coverage": {
+                            "no_checks": ["left", "right", "function", "unrelated"],
+                            "never_observed": [{"node": "root", "check": "state"}],
+                            "stale": [],
+                        },
+                        "rollup": {
+                            "inventory": {
+                                "all": {"total": 5, "counts": {"unknown": {"clear": 5}}}
+                            }
+                        },
+                    },
+                },
+            ),
+        ),
+    )
+
+
+def test_runner_accepts_correct_summary_queries() -> None:
+    """All result fields compare against an independently scripted engine."""
+    script = Script(
+        impacts={"root": QUERY_IMPACT},
+        coverage=QUERY_COVERAGE,
+        rollups={("inventory", "all"): QUERY_ROLLUP},
+    )
+    run_fixture(_query_fixture(), engine_factory=lambda _: ScriptedEngine(script))
+
+
+@pytest.mark.parametrize(
+    ("impact", "coverage", "rollup", "message"),
+    [
+        pytest.param(
+            replace(QUERY_IMPACT, node_id="left"),
+            QUERY_COVERAGE,
+            QUERY_ROLLUP,
+            "impact root node_id",
+            id="impact-identity",
+        ),
+        pytest.param(
+            replace(QUERY_IMPACT, nodes=QUERY_IMPACT.nodes[::-1]),
+            QUERY_COVERAGE,
+            QUERY_ROLLUP,
+            "impact root nodes",
+            id="impact-order",
+        ),
+        pytest.param(
+            replace(QUERY_IMPACT, importance=Importance.LOW),
+            QUERY_COVERAGE,
+            QUERY_ROLLUP,
+            "impact root importance",
+            id="impact-importance",
+        ),
+        pytest.param(
+            QUERY_IMPACT,
+            replace(QUERY_COVERAGE, no_checks=()),
+            QUERY_ROLLUP,
+            "coverage no_checks",
+            id="missing-checks",
+        ),
+        pytest.param(
+            QUERY_IMPACT,
+            replace(QUERY_COVERAGE, never_observed=()),
+            QUERY_ROLLUP,
+            "coverage never_observed",
+            id="never-observed",
+        ),
+        pytest.param(
+            QUERY_IMPACT,
+            replace(
+                QUERY_COVERAGE,
+                stale=(CheckReference(node_id="root", check_id="state"),),
+            ),
+            QUERY_ROLLUP,
+            "coverage stale",
+            id="premature-stale",
+        ),
+        pytest.param(
+            QUERY_IMPACT,
+            QUERY_COVERAGE,
+            replace(QUERY_ROLLUP, view_id="wrong"),
+            "rollup inventory.all view_id",
+            id="view-identity",
+        ),
+        pytest.param(
+            QUERY_IMPACT,
+            QUERY_COVERAGE,
+            replace(QUERY_ROLLUP, group="wrong"),
+            "rollup inventory.all group",
+            id="group-identity",
+        ),
+        pytest.param(
+            QUERY_IMPACT,
+            QUERY_COVERAGE,
+            replace(QUERY_ROLLUP, counts=QUERY_ROLLUP.counts[:1]),
+            "rollup inventory.all total",
+            id="missing-counts",
+        ),
+        pytest.param(
+            QUERY_IMPACT,
+            QUERY_COVERAGE,
+            replace(QUERY_ROLLUP, counts=QUERY_ROLLUP.counts[::-1]),
+            "rollup inventory.all counts",
+            id="count-order",
+        ),
+    ],
+)
+def test_runner_rejects_incorrect_summary_queries(
+    impact: Impact, coverage: Coverage, rollup: Rollup, message: str
+) -> None:
+    """The query assertions detect wrong identities, members, categories, and totals."""
+    script = Script(
+        impacts={"root": impact},
+        coverage=coverage,
+        rollups={("inventory", "all"): rollup},
+    )
+    with pytest.raises(FixtureMismatch, match=message):
+        run_fixture(_query_fixture(), engine_factory=lambda _: ScriptedEngine(script))
 
 
 def _story_four() -> Script:

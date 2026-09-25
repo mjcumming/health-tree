@@ -33,6 +33,7 @@ from health_tree.engine import Engine
 from health_tree.policy import Policy
 from health_tree.types import (
     Check,
+    Coverage,
     Delivery,
     Digest,
     Edge,
@@ -43,6 +44,7 @@ from health_tree.types import (
     EpisodeUpdated,
     Event,
     Explanation,
+    Impact,
     Importance,
     JSONValue,
     Loudness,
@@ -59,8 +61,10 @@ from health_tree.types import (
     Readiness,
     Recipient,
     ResolutionNotice,
+    Rollup,
     Rule,
     Status,
+    View,
 )
 from tests.fixture_schema import parse_duration, validate_fixture
 
@@ -106,6 +110,18 @@ class EngineLike(Protocol):
 
     def readiness(self, node_ids: Collection[str]) -> Readiness:
         """Answer readiness."""
+        ...
+
+    def impact(self, node_id: str) -> Impact:
+        """Return potential dependents."""
+        ...
+
+    def coverage(self) -> Coverage:
+        """Return evidence gaps."""
+        ...
+
+    def rollup(self, view: View, group: str) -> Rollup:
+        """Count one view group."""
         ...
 
 
@@ -155,6 +171,7 @@ class Fixture:
     settings: EngineSettings
     policy: PolicyConfig | None
     nodes: tuple[Node, ...]
+    views: Mapping[str, View]
     steps: tuple[Step, ...]
 
 
@@ -169,6 +186,13 @@ def load_fixture(path: Path) -> Fixture:
         settings=_settings(data["settings"]),
         policy=_policy(data["policy"]) if "policy" in data else None,
         nodes=_in_dependency_order([_node(node) for node in data["graph"]]),
+        views={
+            name: View(
+                view_id=name,
+                groups={group: frozenset(members) for group, members in groups.items()},
+            )
+            for name, groups in data.get("views", {}).items()
+        },
         steps=tuple(_step(step) for step in data["steps"]),
     )
 
@@ -516,7 +540,82 @@ class _Run:
             problems += self._readiness_problems(
                 node_id, spec, self.engine.readiness([node_id])
             )
+        problems += self._summary_queries(queries)
         return problems
+
+    def _summary_queries(self, queries: Mapping[str, Any]) -> list[str]:
+        problems: list[str] = []
+        actual: dict[str, object]
+        for node_id, spec in queries.get("impact", {}).items():
+            impact = self.engine.impact(node_id)
+            actual = {
+                "node_id": impact.node_id,
+                "nodes": [
+                    {"node": node.node_id, "importance": node.importance.value}
+                    for node in impact.nodes
+                ],
+                "importance": impact.importance.value,
+            }
+            problems += self._fields(
+                f"impact {node_id}", {"node_id": node_id, **spec}, actual
+            )
+        if "coverage" in queries:
+            coverage = self.engine.coverage()
+            actual = {
+                "no_checks": list(coverage.no_checks),
+                "never_observed": [
+                    {"node": ref.node_id, "check": ref.check_id}
+                    for ref in coverage.never_observed
+                ],
+                "stale": [
+                    {"node": ref.node_id, "check": ref.check_id}
+                    for ref in coverage.stale
+                ],
+            }
+            problems += self._fields("coverage", queries["coverage"], actual)
+        for view_id, groups in queries.get("rollup", {}).items():
+            for group, spec in groups.items():
+                rollup = self.engine.rollup(self.fixture.views[view_id], group)
+                expected = {
+                    "view_id": view_id,
+                    "group": group,
+                    "counts": [
+                        {
+                            "own": status.value,
+                            "clear": 0,
+                            "own_episode": 0,
+                            "recorded": 0,
+                            **spec["counts"].get(status.value, {}),
+                        }
+                        for status in Status
+                    ],
+                    "total": spec["total"],
+                }
+                actual = {
+                    "view_id": rollup.view_id,
+                    "group": rollup.group,
+                    "counts": [
+                        {
+                            "own": row.own.value,
+                            "clear": row.clear,
+                            "own_episode": row.own_episode,
+                            "recorded": row.recorded,
+                        }
+                        for row in rollup.counts
+                    ],
+                    "total": rollup.total,
+                }
+                problems += self._fields(f"rollup {view_id}.{group}", expected, actual)
+        return problems
+
+    def _fields(
+        self, what: str, expected: Mapping[str, Any], actual: Mapping[str, Any]
+    ) -> list[str]:
+        return [
+            f"{what} {key}: expected {value}, got {actual[key]}"
+            for key, value in expected.items()
+            if actual[key] != value
+        ]
 
     def _sequence[T](
         self,

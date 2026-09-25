@@ -152,6 +152,7 @@ def test_quiet_window_can_cover_everything() -> None:
         pytest.param(lambda e: e.remove("x", T0), KeyError, id="remove-unknown"),
         pytest.param(lambda e: e.explain("x"), KeyError, id="explain-unknown"),
         pytest.param(lambda e: e.readiness(["x"]), KeyError, id="readiness-unknown"),
+        pytest.param(lambda e: e.impact("x"), KeyError, id="impact-unknown"),
     ],
 )
 def test_bad_calls_change_nothing(
