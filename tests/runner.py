@@ -87,6 +87,10 @@ class EngineLike(Protocol):
         """Add a node."""
         ...
 
+    def register_many(self, nodes: Sequence[Node], now: datetime) -> list[Event]:
+        """Add or replace one atomic batch of nodes."""
+        ...
+
     def remove(self, node_id: str, now: datetime) -> list[Event]:
         """Remove a node."""
         ...
@@ -174,6 +178,7 @@ class Step:
 
     at: datetime
     register: Node | None
+    register_many: tuple[Node, ...]
     remove: str | None
     quiet: QuietWindow | None
     ingest: tuple[Observation, ...]
@@ -305,6 +310,7 @@ def _step(data: Mapping[str, Any]) -> Step:
     return Step(
         at=at,
         register=_node(data["register"]) if "register" in data else None,
+        register_many=tuple(_node(item) for item in data.get("register_many", [])),
         remove=data.get("remove"),
         quiet=_quiet(data["quiet"]) if "quiet" in data else None,
         ingest=tuple(_observation(item, at) for item in data.get("ingest", [])),
@@ -449,6 +455,14 @@ class _Run:
             self.graph[step.register.node_id] = step.register
             self._call(
                 self.engine.register(step.register, step.at),
+                step.at,
+                events,
+                deliveries,
+            )
+        if step.register_many:
+            self.graph.update((node.node_id, node) for node in step.register_many)
+            self._call(
+                self.engine.register_many(step.register_many, step.at),
                 step.at,
                 events,
                 deliveries,

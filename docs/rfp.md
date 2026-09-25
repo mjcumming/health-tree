@@ -4,11 +4,11 @@ Design of record for this library. A Home Assistant integration is the first con
 
 | | |
 | --- | --- |
-| Version | 0.6 |
+| Version | 0.7 |
 | Date | 2026-09-25 |
-| Status | Draft for review, with ADRs 0024 to 0032 accepted. A first engine and policy pass every fixture. Nothing is released until the types, stories, and scenarios are accepted. |
+| Status | Draft for review, with ADRs 0024 to 0033 accepted. A first engine and policy pass every fixture. Nothing is released until the types, stories, and scenarios are accepted. |
 | Decisions | [docs/adr](adr/README.md) |
-| Changes from 0.5 | Section 18 |
+| Changes from 0.6 | Section 19 |
 
 ## Purpose
 
@@ -397,6 +397,7 @@ The library requires every duration it uses. It does not fill in a missing one (
 ```python
 engine = Engine(settings, new_id=None)          # required durations; optional id factory (ADR 0017)
 engine.register(node, now) -> list[Event]       # add or replace a node and its checks
+engine.register_many(nodes, now) -> list[Event]  # one atomic graph registration
 engine.remove(node_id, now) -> list[Event]
 engine.ingest(observation, now) -> list[Event]
 engine.ingest_many(observations, now) -> list[Event]  # one atomic observation batch
@@ -417,9 +418,11 @@ policy.snapshot() -> dict
 policy.restore(state, now) -> None
 ```
 
+`register_many` adds or replaces a non-empty batch of nodes. Node ids must be unique within the batch. It validates the resulting graph, including unchanged nodes, before changing graph, checks, episodes, or time. Cycles and reserved redundancy groups reject the whole call. Edges to unregistered targets remain allowed and take effect when those targets arrive. All replacements take effect together, so a valid final graph may be accepted even when applying its replacements individually would create an intermediate cycle. Unmentioned nodes remain registered. Retained check ids keep their observations and holds; new checks start unknown at `now`. The engine evaluates once and returns only events for the final graph. `register` is equivalent to a one-node batch. Existing node order is retained; new nodes follow input order, with dependencies evaluated first. See ADR 0033.
+
 `ingest_many` validates a non-empty batch before applying any of it, rejects repeated `(node_id, check_id)` pairs, then applies all observations and evaluates once. `ingest` is equivalent to a one-observation batch. The batch's intermediate states emit no events. Each affected episode emits only its final opening, update, or resolution for that call; one `advance` likewise evaluates all deadlines due at `now` together. Events returned by an earlier call remain part of the history. Separate arrivals may therefore open child episodes that a later call absorbs. The adapter must not wait to accumulate unrelated arrivals into a batch. See ADR 0024.
 
-In fixtures, a step's `ingest` list is one call to `ingest_many`, with `observed_at` equal to the step's `at`. The runner first calls `engine.advance(at)`, then applies the step, and keeps the complete events from both calls. It feeds those events to the policy in order before calling `policy.advance(at, context)`. A batch cannot erase an event from the preceding `advance`. A step may also register or remove a node, open a quiet window, or shelve an episode. ADR 0030 gives their order. ADR 0027 gives the full order and the record shapes. Fixtures with staggered steps exercise separate arrivals, including any notifications already delivered.
+In fixtures, a step's `ingest` list is one call to `ingest_many`, with `observed_at` equal to the step's `at`. The runner first calls `engine.advance(at)`, then applies the step, and keeps the complete events from both calls. It feeds those events to the policy in order before calling `policy.advance(at, context)`. A batch cannot erase an event from the preceding `advance`. A step may also register one node or a `register_many` list, remove a node, open a quiet window, or shelve an episode. ADR 0030 gives their order. ADR 0027 gives the full order and the record shapes. Fixtures with staggered steps exercise separate arrivals, including any notifications already delivered.
 
 Queries are read-only:
 
@@ -541,6 +544,8 @@ Each is tagged with its area.
 
 72. **Policy.** A notify reminder becomes due during quiet hours. It waits until quiet hours end, including across snapshot/restore. An urgent reminder passes quiet hours but waits for an active shelf. A record-only rule never sends a reminder.
 73. **Policy.** Activate attention for an old open problem. Its opening time and age match are unchanged; its escalation clock starts at activation, and its reminders start with the new delivery request. Ordinary restore preserves those clocks. Initial requests carry the activation cause and respect quiet hours.
+
+74. **Engine.** Register a complete graph or replace multiple nodes together. A dependency can name another node later in the batch. Rewire a dependency in one call without an intermediate cycle, retaining observations and episode identity. Invalid batches leave graph, check state, and time unchanged. Batch registration evaluates only the final graph.
 
 ## 11. Home Assistant integration, later
 
@@ -666,3 +671,8 @@ The library is done when:
 - A situation is an edgeless node with `kind` and `category` `situation` by convention. Existing rules keep it out of inhibition, the settle gate, coalescing, scoped quiet windows, and readiness. The engine and policy do not change (ADR 0032).
 - Section 1 names situations, section 3 describes them, and the conventions table lists `situation`. Section 11 describes binding a situation to a Home Assistant entity.
 - Story 10 and scenarios 61 to 64 are added, with fixtures. They pass against the current engine and policy.
+
+## 19. Changes from 0.6
+
+- Atomic graph registration through `register_many`, with final-graph validation, retained check state, and one evaluation (ADR 0033). Single registration delegates to it.
+- Scenario 74 and a batch-registration fixture step cover simultaneous dependency rewiring, forward references, retained evidence, and restart.

@@ -450,6 +450,7 @@ def _steps(
             {
                 "at",
                 "register",
+                "register_many",
                 "remove",
                 "quiet",
                 "ingest",
@@ -468,10 +469,23 @@ def _steps(
             problems.append(f"{path}.at must be after the previous step")
         if at is not None:
             previous_step = at
-        actions = {"register", "remove", "quiet", "ingest", "shelve"} & set(step)
+        actions = {
+            "register",
+            "register_many",
+            "remove",
+            "quiet",
+            "ingest",
+            "shelve",
+        } & set(step)
         if step.get("restart") is True and actions:
             problems.append(
                 f"{path} cannot restart and also {', '.join(sorted(actions))}"
+            )
+        if "register_many" in step:
+            if "register" in step:
+                problems.append(f"{path} cannot combine register and register_many")
+            _register_batch(
+                step["register_many"], nodes, f"{path}.register_many", problems
             )
         if "register" in step:
             _register_step(step["register"], nodes, f"{path}.register", problems)
@@ -511,6 +525,34 @@ def _register_step(
     )
     if node_id is not None:
         nodes[node_id] = check_ids
+
+
+def _register_batch(
+    value: object,
+    nodes: dict[str, set[str]],
+    where: str,
+    problems: list[str],
+) -> None:
+    if not isinstance(value, list) or not value:
+        problems.append(f"{where} must be a non-empty list")
+        return
+    seen: set[str] = set()
+    dependencies: list[tuple[str, list[str]]] = []
+    for index, item in enumerate(value):
+        path = f"{where}[{index}]"
+        node_id, checks, depends = _node(item, path, problems)
+        if node_id is not None:
+            if node_id in seen:
+                problems.append(f"{path}: duplicate node id {node_id}")
+            seen.add(node_id)
+            nodes[node_id] = checks
+        dependencies.append((path, depends))
+    problems.extend(
+        f"{path}: depends on unknown {target}"
+        for path, depends in dependencies
+        for target in depends
+        if target not in nodes
+    )
 
 
 def _shelve_step(

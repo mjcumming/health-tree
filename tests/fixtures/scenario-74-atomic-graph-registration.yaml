@@ -1,0 +1,49 @@
+id: scenario-74-atomic-graph-registration
+title: Rewire a graph atomically while retaining evidence
+covers: [scenario-74]
+start: 2026-09-25T12:00:00Z
+settings: {settle: 0s, rejoin_grace: 0s, startup_grace: 0s, coalesce_count: 3, coalesce_window: 60s}
+graph:
+  - id: a
+    checks:
+      - {id: state, raise_hold: 0s, clear_hold: 0s, ttl: null, unknown_hold: 15m}
+  - id: b
+    depends_on: [a]
+    checks:
+      - {id: state, raise_hold: 0s, clear_hold: 0s, ttl: null, unknown_hold: 15m}
+steps:
+  - at: 2026-09-25T12:00:00Z
+    ingest:
+      - {node: a, check: state, status: pass, reason: available}
+      - {node: b, check: state, status: fail, reason: unavailable}
+    expect:
+      events: [{opened: {anchor: b, episode: $problem}}]
+      bind: {problem: {opened: b}}
+  - at: 2026-09-25T12:00:01Z
+    register_many:
+      - id: a
+        depends_on: [b]
+        checks:
+          - {id: state, raise_hold: 0s, clear_hold: 0s, ttl: null, unknown_hold: 15m}
+      - id: b
+        checks:
+          - {id: state, raise_hold: 0s, clear_hold: 0s, ttl: null, unknown_hold: 15m}
+      - {id: function, depends_on: [a, missing_evidence]}
+      - {id: missing_evidence}
+    expect:
+      events: [{updated: {anchor: b, episode: $problem}}]
+      queries:
+        readiness:
+          a: {answer: blocked, names: [b]}
+  - at: 2026-09-25T12:00:02Z
+    restart: true
+    expect: {events: []}
+  - at: 2026-09-25T12:00:03Z
+    ingest:
+      - {node: b, check: state, status: pass, reason: available}
+    expect:
+      events: [{resolved: {episode: $problem, resolution: cleared}}]
+      queries:
+        readiness:
+          a: {answer: ready, names: []}
+          function: {answer: unknown, names: [missing_evidence]}

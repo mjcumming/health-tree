@@ -236,3 +236,15 @@ def test_batch_order_does_not_matter(scenario: Scenario) -> None:
     list(_calls(forward, scenario.steps))
     list(_calls(backward, reversed_steps))
     assert forward.snapshot() == backward.snapshot()
+
+
+@given(scenarios())
+def test_batch_registration_preserves_observation_history(scenario: Scenario) -> None:
+    """Atomic initial registration produces the same subsequent event history."""
+    sequential = _started(scenario, new_id=counting_ids())
+    batched = Engine(scenario.settings, new_id=counting_ids())
+    assert batched.register_many(scenario.nodes, T0) == []
+    assert list(_calls(batched, scenario.steps)) == list(
+        _calls(sequential, scenario.steps)
+    )
+    assert batched.snapshot() == sequential.snapshot()

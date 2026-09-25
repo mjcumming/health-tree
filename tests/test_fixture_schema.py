@@ -77,6 +77,7 @@ def test_checked_in_fixtures_match_the_schema() -> None:
         "scenario-64-situation-waits-for-quiet-hours.yaml",
         "scenario-72-reminders-respect-quiet-hours.yaml",
         "scenario-73-activation-restarts-attention.yaml",
+        "scenario-74-atomic-graph-registration.yaml",
         "story-02-detector-hangs.yaml",
         "story-04-battery-digest.yaml",
         "story-06-ai-box.yaml",
@@ -439,5 +440,38 @@ def test_schema_rejects_bad_runtime_steps(
     """Register, remove, and shelve steps name real nodes, episodes, and times."""
     document = yaml.safe_load((FIXTURES / filename).read_text(encoding="utf-8"))
     document["steps"][index].update(change)
+    with pytest.raises(FixtureSchemaError, match=message):
+        validate_fixture(document, filename=filename)
+
+
+@pytest.mark.parametrize(
+    ("change", "message"),
+    [
+        pytest.param({"register_many": []}, "non-empty list", id="empty"),
+        pytest.param({"register_many": {}}, "non-empty list", id="not-list"),
+        pytest.param({"register_many": [42]}, "must be a mapping", id="bad-node"),
+        pytest.param(
+            {"register_many": [{"id": "a"}, {"id": "a"}]},
+            "duplicate node id",
+            id="duplicate",
+        ),
+        pytest.param(
+            {"register_many": [{"id": "a", "depends_on": ["nowhere"]}]},
+            "depends on unknown",
+            id="unknown-target",
+        ),
+        pytest.param(
+            {"register": {"id": "a"}}, "cannot combine", id="single-and-batch"
+        ),
+        pytest.param({"restart": True}, "cannot restart", id="restart"),
+    ],
+)
+def test_schema_rejects_bad_registration_batches(
+    change: dict[str, object], message: str
+) -> None:
+    """Batch fixture steps cannot hide malformed or ambiguous graph changes."""
+    filename = "scenario-74-atomic-graph-registration.yaml"
+    document = yaml.safe_load((FIXTURES / filename).read_text(encoding="utf-8"))
+    document["steps"][1].update(change)
     with pytest.raises(FixtureSchemaError, match=message):
         validate_fixture(document, filename=filename)

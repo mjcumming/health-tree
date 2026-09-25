@@ -177,6 +177,10 @@ class ScriptedEngine:
         """Record the registration."""
         return self._events("register", node.node_id, now)
 
+    def register_many(self, nodes: Sequence[Node], now: datetime) -> list[Event]:
+        """Record atomic graph registration."""
+        return self._events("register_many", [node.node_id for node in nodes], now)
+
     def remove(self, node_id: str, now: datetime) -> list[Event]:
         """Record the removal."""
         return self._events("remove", node_id, now)
