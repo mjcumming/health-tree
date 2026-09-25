@@ -1,0 +1,47 @@
+id: scenario-59-group-rollup
+title: A passing group anchor has an episode while its failing members are recorded
+covers: [scenario-59]
+start: 2026-09-24T12:00:00Z
+settings:
+  settle: 0s
+  rejoin_grace: 0s
+  startup_grace: 0s
+  coalesce_count: 3
+  coalesce_window: 60s
+graph:
+  - id: controller
+    checks:
+      - {id: state, raise_hold: 0s, clear_hold: 0s, ttl: null, unknown_hold: 15m}
+  - id: one
+    depends_on: [controller]
+    checks:
+      - {id: state, raise_hold: 0s, clear_hold: 0s, ttl: null, unknown_hold: 15m}
+  - id: two
+    depends_on: [controller]
+    checks:
+      - {id: state, raise_hold: 0s, clear_hold: 0s, ttl: null, unknown_hold: 15m}
+  - id: three
+    depends_on: [controller]
+    checks:
+      - {id: state, raise_hold: 0s, clear_hold: 0s, ttl: null, unknown_hold: 15m}
+views:
+  equipment:
+    all: [controller, one, two, three]
+steps:
+  - at: 2026-09-24T12:00:00Z
+    ingest:
+      - {node: controller, check: state, status: pass, reason: ok}
+      - {node: one, check: state, status: fail, reason: fault}
+      - {node: two, check: state, status: fail, reason: fault}
+      - {node: three, check: state, status: fail, reason: fault}
+    expect:
+      events:
+        - {opened: {anchor: controller, form: group, recorded: [one, two, three]}}
+      queries:
+        rollup:
+          equipment:
+            all:
+              total: 4
+              counts:
+                pass: {own_episode: 1}
+                fail: {recorded: 3}

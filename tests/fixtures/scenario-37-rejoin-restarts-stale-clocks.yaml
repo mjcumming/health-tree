@@ -1,6 +1,6 @@
 id: scenario-37-rejoin-restarts-stale-clocks
 title: Devices that went quiet during an outage get a fresh stale clock at the rejoin
-covers: [scenario-37]
+covers: [scenario-37, scenario-60]
 start: 2026-09-24T00:00:00Z
 settings:
   settle: 2m
@@ -40,6 +40,11 @@ steps:
     expect:
       events:
         - {updated: {episode: $controller_ep, recorded: [d1, d2]}}
+      queries:
+        coverage:
+          no_checks: []
+          never_observed: []
+          stale: [{node: d1, check: fresh}, {node: d2, check: fresh}]
   - at: 2026-09-24T02:01:00Z
     ingest:
       - {node: controller, check: link, status: pass, reason: ok}
@@ -50,6 +55,8 @@ steps:
       events:
         - {resolved: {episode: $controller_ep, resolution: cleared}}
       open: []
+      queries:
+        coverage: {no_checks: [], never_observed: [], stale: []}
   - at: 2026-09-24T02:30:00Z
     ingest:
       - {node: d1, check: fresh, status: pass, reason: fresh}
@@ -66,3 +73,8 @@ steps:
         - {opened: {anchor: d2, episode: $d2_ep, status: unknown, reasons: [stale]}}
       open:
         - {episode: $d2_ep, anchor: d2}
+      queries:
+        coverage:
+          no_checks: []
+          never_observed: []
+          stale: [{node: d2, check: fresh}]

@@ -1,0 +1,101 @@
+id: story-09-insteon-controller-chokes
+title: A choking controller gathers its failing devices, and two leftovers stand alone
+covers: [story-9]
+start: 2026-09-24T20:00:00Z
+settings:
+  settle: 2m
+  rejoin_grace: 1m
+  startup_grace: 0s
+  coalesce_count: 3
+  coalesce_window: 60s
+graph:
+  - id: controller
+    kind: controller
+    checks:
+      - {id: state, raise_hold: 0s, clear_hold: 30s, ttl: 1h, unknown_hold: 15m}
+  - id: d1
+    depends_on: [controller]
+    checks:
+      - {id: state, raise_hold: 0s, clear_hold: 30s, ttl: 1h, unknown_hold: 15m}
+  - id: d2
+    depends_on: [controller]
+    checks:
+      - {id: state, raise_hold: 0s, clear_hold: 30s, ttl: 1h, unknown_hold: 15m}
+  - id: d3
+    depends_on: [controller]
+    checks:
+      - {id: state, raise_hold: 0s, clear_hold: 30s, ttl: 1h, unknown_hold: 15m}
+  - id: d4
+    depends_on: [controller]
+    checks:
+      - {id: state, raise_hold: 0s, clear_hold: 30s, ttl: 1h, unknown_hold: 15m}
+  - id: d5
+    depends_on: [controller]
+    checks:
+      - {id: state, raise_hold: 0s, clear_hold: 30s, ttl: 1h, unknown_hold: 15m}
+  - id: d6
+    depends_on: [controller]
+    checks:
+      - {id: state, raise_hold: 0s, clear_hold: 30s, ttl: 1h, unknown_hold: 15m}
+steps:
+  - at: 2026-09-24T20:00:00Z
+    ingest:
+      - {node: controller, check: state, status: warn, reason: slow_responses}
+      - {node: d1, check: state, status: pass, reason: ok}
+      - {node: d2, check: state, status: pass, reason: ok}
+      - {node: d3, check: state, status: pass, reason: ok}
+      - {node: d4, check: state, status: pass, reason: ok}
+      - {node: d5, check: state, status: pass, reason: ok}
+      - {node: d6, check: state, status: pass, reason: ok}
+    expect:
+      bind:
+        controller_ep: {opened: controller}
+      events:
+        - {opened: {anchor: controller, episode: $controller_ep, status: warn, reasons: [slow_responses]}}
+  - at: 2026-09-24T20:01:00Z
+    ingest:
+      - {node: d1, check: state, status: fail, reason: command_failed}
+      - {node: d2, check: state, status: fail, reason: command_failed}
+      - {node: d3, check: state, status: fail, reason: command_failed}
+      - {node: d4, check: state, status: fail, reason: command_failed}
+      - {node: d5, check: state, status: fail, reason: command_failed}
+      - {node: d6, check: state, status: fail, reason: command_failed}
+    expect:
+      events:
+        - {updated: {episode: $controller_ep, status: fail, recorded: [d1, d2, d3, d4, d5, d6]}}
+      open:
+        - {episode: $controller_ep, anchor: controller}
+  - at: 2026-09-24T20:03:00Z
+    ingest:
+      - {node: d1, check: state, status: pass, reason: ok}
+      - {node: d2, check: state, status: pass, reason: ok}
+    expect:
+      events: []
+  - at: 2026-09-24T20:03:31Z
+    expect:
+      events:
+        - {updated: {episode: $controller_ep, recorded: [d3, d4, d5, d6]}}
+  - at: 2026-09-24T20:04:00Z
+    ingest:
+      - {node: d3, check: state, status: pass, reason: ok}
+      - {node: d4, check: state, status: pass, reason: ok}
+    expect:
+      events: []
+  - at: 2026-09-24T20:04:31Z
+    expect:
+      events:
+        - {updated: {episode: $controller_ep, status: warn, reasons: [slow_responses], recorded: []}}
+      open:
+        - {episode: $controller_ep, anchor: controller}
+  - at: 2026-09-24T20:05:31Z
+    expect:
+      bind:
+        d5_ep: {opened: d5}
+        d6_ep: {opened: d6}
+      events:
+        - {opened: {anchor: d5, episode: $d5_ep, reasons: [command_failed]}}
+        - {opened: {anchor: d6, episode: $d6_ep, reasons: [command_failed]}}
+      open:
+        - {episode: $controller_ep, anchor: controller}
+        - {episode: $d5_ep, anchor: d5}
+        - {episode: $d6_ep, anchor: d6}

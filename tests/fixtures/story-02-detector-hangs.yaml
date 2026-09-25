@@ -1,0 +1,59 @@
+id: story-02-detector-hangs
+title: A hung detector opens on the Frigate service, and impact names the lighting it takes down
+covers: [story-2]
+start: 2026-09-24T21:00:00Z
+settings:
+  settle: 2m
+  rejoin_grace: 1m
+  startup_grace: 0s
+  coalesce_count: 3
+  coalesce_window: 60s
+graph:
+  - id: frigate_host
+    checks:
+      - {id: ping, raise_hold: 0s, clear_hold: 30s, ttl: 1h, unknown_hold: 15m}
+  - id: frigate
+    kind: service
+    depends_on: [frigate_host]
+    checks:
+      - {id: detector, raise_hold: 0s, clear_hold: 30s, ttl: 5m, unknown_hold: 15m}
+  - id: person_hall
+    kind: sensor
+    depends_on: [frigate]
+  - id: person_kitchen
+    kind: sensor
+    depends_on: [frigate]
+  - id: hall_lighting
+    kind: function
+    importance: high
+    depends_on: [person_hall]
+  - id: kitchen_lighting
+    kind: function
+    importance: high
+    depends_on: [person_kitchen]
+steps:
+  - at: 2026-09-24T21:00:00Z
+    ingest:
+      - {node: frigate_host, check: ping, status: pass, reason: reachable}
+      - {node: frigate, check: detector, status: pass, reason: detecting}
+    expect:
+      events: []
+  - at: 2026-09-24T21:01:00Z
+    ingest:
+      - {node: frigate, check: detector, status: fail, reason: detector_stalled}
+    expect:
+      bind:
+        frigate_ep: {opened: frigate}
+      events:
+        - {opened: {anchor: frigate, episode: $frigate_ep, importance: high, reasons: [detector_stalled]}}
+      queries:
+        impact:
+          frigate:
+            importance: high
+            nodes:
+              - {node: person_hall, importance: normal}
+              - {node: person_kitchen, importance: normal}
+              - {node: hall_lighting, importance: high}
+              - {node: kitchen_lighting, importance: high}
+        readiness:
+          hall_lighting: {answer: blocked, names: [frigate], by: dependency}

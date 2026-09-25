@@ -11,6 +11,7 @@ from dataclasses import dataclass, field
 from datetime import datetime, time, timedelta, tzinfo
 from enum import Enum
 from functools import total_ordering
+from types import MappingProxyType
 from typing import Literal
 
 type JSONValue = (
@@ -329,6 +330,98 @@ class Readiness:
         """Say what blocks exactly when the answer is blocked."""
         if (self.answer == "blocked") != (self.blocked_by is not None):
             raise ValueError("blocked_by is required when blocked, and only then")
+
+
+@dataclass(frozen=True, slots=True, kw_only=True)
+class ImpactNode:
+    """A potential dependent and its declared importance, regardless of status."""
+
+    node_id: str
+    importance: Importance
+
+
+@dataclass(frozen=True, slots=True, kw_only=True)
+class Impact:
+    """Potential dependents, ordered roots first, and maximum impact importance.
+
+    `nodes` excludes the requested node; `importance` includes it.
+    """
+
+    node_id: str
+    nodes: tuple[ImpactNode, ...]
+    importance: Importance
+
+
+@dataclass(frozen=True, slots=True, kw_only=True)
+class CheckReference:
+    """The identity of a registered check, scoped to its node."""
+
+    node_id: str
+    check_id: str
+
+
+@dataclass(frozen=True, slots=True, kw_only=True)
+class Coverage:
+    """Evidence gaps, including evidence-only checks (RFP 8).
+
+    Never-observed and stale checks can overlap. Expiry without an elapsed
+    unknown hold is not stale. Nodes and checks follow registration's
+    dependency order and check order respectively.
+    """
+
+    no_checks: tuple[str, ...]
+    never_observed: tuple[CheckReference, ...]
+    stale: tuple[CheckReference, ...]
+
+
+@dataclass(frozen=True, slots=True, kw_only=True)
+class View:
+    """Named groups supplied by the adapter, never used for inhibition.
+
+    Membership is copied and frozen. The engine validates only the group
+    selected by a rollup query against its current graph.
+    """
+
+    view_id: str
+    groups: Mapping[str, frozenset[str]]
+
+    def __post_init__(self) -> None:
+        """Detach membership from the adapter's mutable configuration."""
+        object.__setattr__(
+            self,
+            "groups",
+            MappingProxyType(
+                {name: frozenset(members) for name, members in self.groups.items()}
+            ),
+        )
+
+
+@dataclass(frozen=True, slots=True, kw_only=True)
+class RollupCounts:
+    """Counts for one observed status, partitioned by open episode membership.
+
+    An anchor counts as `own_episode`, otherwise a recorded node counts once
+    as `recorded`. `clear` means neither, not necessarily healthy.
+    """
+
+    own: Status
+    clear: int
+    own_episode: int
+    recorded: int
+
+
+@dataclass(frozen=True, slots=True, kw_only=True)
+class Rollup:
+    """One view group's counts, with one row per status in `Status` order."""
+
+    view_id: str
+    group: str
+    counts: tuple[RollupCounts, ...]
+
+    @property
+    def total(self) -> int:
+        """Number of distinct selected nodes, across every status and category."""
+        return sum(row.clear + row.own_episode + row.recorded for row in self.counts)
 
 
 @dataclass(frozen=True, slots=True, kw_only=True)

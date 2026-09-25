@@ -6,6 +6,10 @@ All notable changes to this project are documented here. The format follows [Kee
 
 ### Added
 
+- Public `impact`, `coverage`, and `rollup` queries with immutable result records and adapter-owned views. Query contracts and fixtures cover potential impact, evidence gaps, and counts without duplicate dependents (ADR 0029).
+- Fixture steps that register and remove nodes at runtime and shelve episodes (proposed ADR 0030).
+- Fixtures for scenarios 7, 21, and 32 and stories 2, 6, 7, and 9. Every story and scenario now has a fixture, except scenarios 12, 26, and 38, which unit tests cover.
+- RFP 0.5 specifies public query contracts and scenarios 57 to 60. Scenario 35 now has a coverage fixture, and the fixture runner supports all five queries.
 - ADRs 0024 to 0026 and scenario fixtures 53 to 56 for atomic and staggered ingestion, partial readiness coverage, and initially unknown command checks.
 - `health_tree.types`, the public records: fixed types, settings, nodes, checks, observations, episodes, events, quiet windows, query results, policy configuration, and deliveries (ADR 0027).
 - `Engine` and `Policy` with their RFP section 8 signatures. Every method raises `NotImplementedError` until the engine is written.
@@ -37,6 +41,7 @@ All notable changes to this project are documented here. The format follows [Kee
 
 ### Changed
 
+- ADR 0029 is accepted: public query records and adapter-owned views.
 - Documented current Home Assistant error and repair conventions in the UI worksheet, with release-source references and proposed reuse of native setup, reauthentication, entity availability, Repairs, diagnostics, and action errors.
 - The Homeostatic UI proposal now includes user-created alerts and rule-reported conditions, with shared attention, explicit clearing and freshness, restart/schedule handling, and a proposed situation-alert scope extension. Library behavior is unchanged.
 - Expanded the Homeostatic UI ideas worksheet with proposed setup, monitoring, alert, coverage, maintenance, and migration workflows, implementation gaps, and acceptance walkthroughs. These remain proposals, not library behavior changes.

@@ -4,11 +4,11 @@ Design of record for this library. A Home Assistant integration is the first con
 
 | | |
 | --- | --- |
-| Version | 0.4 |
+| Version | 0.5 |
 | Date | 2026-09-24 |
-| Status | Draft for review, with ADRs 0024 to 0028 accepted. A first engine and policy pass every fixture. Nothing is released until the types, stories, and scenarios are accepted. |
+| Status | Draft for review, with ADRs 0024 to 0029 accepted. A first engine and policy pass every fixture. Nothing is released until the types, stories, and scenarios are accepted. |
 | Decisions | [docs/adr](adr/README.md) |
-| Changes from 0.3 | Section 16 |
+| Changes from 0.4 | Section 17 |
 
 ## Purpose
 
@@ -377,7 +377,7 @@ policy.restore(state, now) -> None
 
 `ingest_many` validates a non-empty batch before applying any of it, rejects repeated `(node_id, check_id)` pairs, then applies all observations and evaluates once. `ingest` is equivalent to a one-observation batch. The batch's intermediate states emit no events. Each affected episode emits only its final opening, update, or resolution for that call; one `advance` likewise evaluates all deadlines due at `now` together. Events returned by an earlier call remain part of the history. Separate arrivals may therefore open child episodes that a later call absorbs. The adapter must not wait to accumulate unrelated arrivals into a batch. See ADR 0024.
 
-In fixtures, a step's `ingest` list is one call to `ingest_many`, with `observed_at` equal to the step's `at`. The runner first calls `engine.advance(at)`, then applies the step, and keeps the complete events from both calls. It feeds those events to the policy in order before calling `policy.advance(at, context)`. A batch cannot erase an event from the preceding `advance`. A step may also open a quiet window, after `advance` and before the batch. ADR 0027 gives the full order and the record shapes. Fixtures with staggered steps exercise separate arrivals, including any notifications already delivered.
+In fixtures, a step's `ingest` list is one call to `ingest_many`, with `observed_at` equal to the step's `at`. The runner first calls `engine.advance(at)`, then applies the step, and keeps the complete events from both calls. It feeds those events to the policy in order before calling `policy.advance(at, context)`. A batch cannot erase an event from the preceding `advance`. A step may also register or remove a node, open a quiet window, or shelve an episode. ADR 0030 gives their order. ADR 0027 gives the full order and the record shapes. Fixtures with staggered steps exercise separate arrivals, including any notifications already delivered.
 
 Queries are read-only:
 
@@ -390,6 +390,15 @@ Queries are read-only:
 | `rollup(view, group)` | Counts by `own` status and inhibition for one group of one view: clear, own episode, or recorded on another. Each node is counted once |
 
 Views are named groupings that the adapter declares, such as location, integration, or label. They feed `rollup` and nothing else.
+
+### Query contracts
+
+Queries read the state from the last engine call. They never advance time, emit events, change deadlines, or modify snapshots. Unknown node ids raise `KeyError`. Results use immutable records from `health_tree.types`. ADR 0029 records the public shapes and view boundary.
+
+- `impact(node_id) -> Impact` returns the requested `node_id`, `nodes` as a tuple of `ImpactNode(node_id, importance)`, and `importance`, the maximum over the requested node and its dependents. Each registered transitive dependent appears once, dependencies first with registration order breaking ties, excluding the requested node. This is potential impact, regardless of observed status or episodes. Missing edge targets follow ADR 0028: they do not participate until registered.
+- `coverage() -> Coverage` returns `no_checks` (node ids), `never_observed` (check references), and `stale` (check references). A `CheckReference` has `node_id` and `check_id`. Nodes are in dependency order and checks in registration order. All registered checks count, including evidence-only checks. `no_checks` means literally no checks, not no affecting checks; readiness still treats an evidence-only terminal node as unwatched. An explicit `unknown` report counts as observed. `stale` means effective `unknown` whose current unknown hold has elapsed, including rejoin timing. Expiry alone is not yet stale. Never-observed checks can also be stale, so the lists may overlap. Quiet windows and inhibition do not hide gaps. An empty engine returns empty lists.
+- `rollup(view, group) -> Rollup` takes an adapter-owned `View(view_id, groups)`, where `groups` maps group names to sets of node ids. The record copies and freezes membership. Pass the view directly; there is no engine view registry and views are not in engine snapshots. Adapters restore their view configuration alongside their graph configuration. Groups may overlap; membership never adds dependencies or changes importance, readiness, episodes, or policy. An unknown group or an unregistered member of the selected group raises `KeyError`, rather than silently shrinking the count. Unselected groups are not validated against the graph. Empty groups are valid.
+- A `Rollup` identifies `view_id` and `group`, with `counts`, a tuple of `RollupCounts` for all four statuses in `Status` order. Each row has `own`, `clear`, `own_episode`, and `recorded`. Classify each selected node once: an anchor of any open episode (including a group) is `own_episode`; otherwise membership in any open episode's `recorded` set is `recorded`; otherwise it is `clear`. Anchoring takes precedence over recording, and recording under multiple roots counts once. `clear` means no open episode membership, not healthy: a pending or quieted failure still counts under `own: fail`, and an unwatched node under `own: unknown`. The `total` property sums all rows and equals the selected group's size.
 
 ## 9. Stories
 
@@ -478,6 +487,10 @@ Each is tagged with its area.
 54. **Engine and policy.** Three children fail ten seconds apart under a passing controller. The first two open their own episodes. The third arrival opens a group and absorbs the first two; their opening events remain in the history. With `notify` and `batch` 30 seconds, their pending deliveries are dropped and only the group is delivered after its own batch delay. An `urgent` variant delivers the first two openings immediately and then the group; absorption does not undo those deliveries.
 55. **Queries.** A function needs a passing service and an unwatched terminal controller. Readiness is `unknown`, naming the controller, including through an intermediate node with no checks and when the function's own check passes. A terminal node with only evidence checks (`affects_own: false`) is also unwatched. A node with no checks above a watched, passing dependency can still be `ready`.
 56. **Engine.** A command check is registered with `ttl: null` and `unknown_hold: 15m`, without an observation. Readiness is `unknown`. After the hold it opens a `stale` episode. Its first observed `pass` clears that episode only after `clear_hold`. A separate command check initialized with an observed `pass` does not become stale merely because no new command is issued.
+57. **Queries.** A passing root supports two branches that share a critical function. `impact` lists both branches and the function once, excludes the root and unrelated nodes, and reports critical importance. A leaf's impact is empty and retains its own importance. Queries do not change state or events.
+58. **Queries.** Two roots fail and record one shared device. A view containing all three counts two own episodes and one recorded failure. Overlapping groups do not change those episodes or duplicate a node inside one group. A quieted failure still counts as `fail`, with no episode membership. Unwatched nodes remain `unknown` in the counts.
+59. **Queries.** Three failing siblings coalesce on a passing controller. Its rollup row is `pass` with one own episode, and the three siblings are recorded failures. A separately established child episode keeps its own-episode classification when a later parent failure inhibits it.
+60. **Queries.** Coverage distinguishes no checks, never observed, expired but not yet stale, and stale after the unknown hold. Explicit unknown reports are observed, evidence-only checks are included, and never-observed checks can also be stale. Quiet windows do not hide gaps, restart preserves them, and fresh observations remove them. Rejoin resets stale timing consistently with scenario 37.
 
 ## 11. Home Assistant integration, later
 
@@ -588,3 +601,10 @@ The library is done when:
 - A first engine and policy pass every fixture. The semantics this RFP left open are recorded in ADR 0028. Fixtures are added for scenarios 1 to 6, 8 to 11, 13, 15 to 17, 20, 22, 23, 25, 28 to 31, 34, 37, and 40 to 42.
 - Rule 15: an episode whose anchor recovers holds the nodes it muted that still fail through their rejoin grace, instead of sending a premature all-clear. Scenario 4 is restated.
 - Readiness names causes only. A node whose state a failed dependency explains is left out. Scenarios 34 and 49 are restated.
+
+## 17. Changes from 0.4
+
+- Public result records and precise contracts for `impact`, `coverage`, and `rollup`, with adapter-owned immutable views (ADR 0029).
+- Scenario 35 has a coverage fixture. Scenarios 57 to 60 cover potential impact, duplicate-free view counts, coalesced and independent episodes, and evidence gaps across expiry, restart, and rejoin.
+- Queries read evaluated state without advancing time or modifying snapshots. Episode lifecycle and policy are unchanged.
+- Fixture steps can register and remove nodes at runtime and shelve episodes (ADR 0030). Scenarios 7, 21, and 32 and stories 2, 6, 7, and 9 have fixtures, and story 4's fixture also covers scenarios 18 and 33. Every story and scenario now has a fixture, except scenarios 12 and 26 (rejected registrations) and 38 (id ordering), which unit tests cover.

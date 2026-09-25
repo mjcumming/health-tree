@@ -1,0 +1,89 @@
+id: scenario-58-view-rollup
+title: Overlapping views count shared symptoms once and keep status separate from episodes
+covers: [scenario-58]
+start: 2026-09-24T12:00:00Z
+settings:
+  settle: 0s
+  rejoin_grace: 0s
+  startup_grace: 0s
+  coalesce_count: 3
+  coalesce_window: 60s
+graph:
+  - id: a
+    checks:
+      - {id: state, raise_hold: 0s, clear_hold: 0s, ttl: null, unknown_hold: 15m}
+  - id: b
+    checks:
+      - {id: state, raise_hold: 0s, clear_hold: 0s, ttl: null, unknown_hold: 15m}
+  - id: device
+    depends_on: [a, b]
+    checks:
+      - {id: state, raise_hold: 0s, clear_hold: 0s, ttl: null, unknown_hold: 15m}
+  - id: quieted
+    checks:
+      - {id: state, raise_hold: 0s, clear_hold: 0s, ttl: null, unknown_hold: 15m}
+  - id: unwatched
+views:
+  location:
+    all: [a, b, device, quieted, unwatched]
+    room: [device, device, quieted]
+    empty: []
+  integration:
+    shared: [a, device]
+steps:
+  - at: 2026-09-24T12:00:00Z
+    quiet: {scope: node, node: quieted, until: 2026-09-24T13:00:00Z}
+    ingest:
+      - {node: a, check: state, status: fail, reason: unreachable}
+      - {node: b, check: state, status: fail, reason: unreachable}
+      - {node: device, check: state, status: fail, reason: unavailable}
+      - {node: quieted, check: state, status: fail, reason: fault}
+    expect:
+      bind:
+        a_ep: {opened: a}
+        b_ep: {opened: b}
+      events:
+        - {opened: {anchor: a, episode: $a_ep, recorded: [device]}}
+        - {opened: {anchor: b, episode: $b_ep, recorded: [device]}}
+      queries:
+        rollup:
+          location:
+            all:
+              total: 5
+              counts:
+                unknown: {clear: 1}
+                fail: {clear: 1, own_episode: 2, recorded: 1}
+            room: {total: 2, counts: {fail: {clear: 1, recorded: 1}}}
+            empty: {total: 0, counts: {}}
+          integration:
+            shared: {total: 2, counts: {fail: {own_episode: 1, recorded: 1}}}
+  - at: 2026-09-24T12:01:00Z
+    restart: true
+    expect:
+      events: []
+      queries:
+        rollup:
+          location:
+            all:
+              total: 5
+              counts:
+                unknown: {clear: 1}
+                fail: {clear: 1, own_episode: 2, recorded: 1}
+  - at: 2026-09-24T12:02:00Z
+    ingest:
+      - {node: a, check: state, status: pass, reason: ok}
+      - {node: b, check: state, status: pass, reason: ok}
+      - {node: device, check: state, status: pass, reason: ok}
+    expect:
+      events:
+        - {resolved: {episode: $a_ep, resolution: cleared}}
+        - {resolved: {episode: $b_ep, resolution: cleared}}
+      queries:
+        rollup:
+          location:
+            all:
+              total: 5
+              counts:
+                pass: {clear: 3}
+                unknown: {clear: 1}
+                fail: {clear: 1}

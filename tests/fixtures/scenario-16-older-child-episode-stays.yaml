@@ -1,6 +1,6 @@
 id: scenario-16-older-child-episode-stays
 title: An older child episode stays open through its parent's outage and nothing reopens
-covers: [scenario-16]
+covers: [scenario-16, scenario-59]
 start: 2026-09-24T18:00:00Z
 settings:
   settle: 2m
@@ -16,6 +16,9 @@ graph:
     depends_on: [parent]
     checks:
       - {id: state, raise_hold: 0s, clear_hold: 30s, ttl: null, unknown_hold: 15m}
+views:
+  equipment:
+    all: [parent, child]
 steps:
   - at: 2026-09-24T18:00:00Z
     ingest:
@@ -42,6 +45,10 @@ steps:
       open:
         - {episode: $child_ep, anchor: child}
         - {episode: $parent_ep, anchor: parent}
+      queries:
+        rollup:
+          equipment:
+            all: {total: 2, counts: {fail: {own_episode: 2}}}
   - at: 2026-09-26T18:10:00Z
     ingest:
       - {node: parent, check: link, status: pass, reason: ok}

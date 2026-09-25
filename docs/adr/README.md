@@ -32,6 +32,8 @@ Each file records one decision: the context, what was decided, the options that 
 | [0026](0026-checks-start-unknown-at-registration.md) | Checks start unknown at registration | Accepted |
 | [0027](0027-public-records-and-the-runner-before-the-engine.md) | Public records, interface stubs, and the fixture runner come before the engine | Accepted |
 | [0028](0028-engine-and-policy-semantics-the-rfp-left-open.md) | Engine and policy semantics the RFP left open | Accepted |
+| [0029](0029-public-queries-and-adapter-owned-views.md) | Public query records and adapter-owned views | Accepted |
+| [0030](0030-fixture-steps-for-runtime-changes-and-shelving.md) | Fixture steps for runtime graph changes and shelving | Proposed |
 
 ## Writing one
 

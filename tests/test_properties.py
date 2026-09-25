@@ -18,6 +18,7 @@ from health_tree.types import (
     Node,
     QuietWindow,
     Status,
+    View,
 )
 from tests.engine_helpers import T0, at, check, counting_ids, node, obs
 
@@ -105,6 +106,33 @@ def _calls(
         yield elapsed, engine.advance(now)
         if batch:
             yield elapsed, engine.ingest_many([obs(n, s, now) for n, s in batch], now)
+
+
+@given(scenarios())
+def test_queries_preserve_state_and_count_each_node_once(scenario: Scenario) -> None:
+    """Queries partition inventory using the event history without altering it."""
+    engine = _started(scenario)
+    episodes = _replay(_calls(engine, scenario.steps))
+    before = engine.snapshot()
+    deadline = engine.next_deadline()
+    members = frozenset(item.node_id for item in scenario.nodes)
+    view = View(view_id="inventory", groups={"all": members})
+    result = engine.rollup(view, "all")
+    anchors = {episode.anchor for episode in episodes.values()}
+    recorded = {name for episode in episodes.values() for name in episode.recorded}
+    assert result.total == len(members)
+    assert tuple(row.own for row in result.counts) == tuple(Status)
+    assert sum(row.own_episode for row in result.counts) == len(anchors)
+    assert sum(row.recorded for row in result.counts) == len(recorded - anchors)
+    assert sum(row.clear for row in result.counts) == len(members - anchors - recorded)
+    engine.coverage()
+    for name in members:
+        impact = engine.impact(name)
+        dependent_ids = [item.node_id for item in impact.nodes]
+        assert len(dependent_ids) == len(set(dependent_ids))
+        assert name not in dependent_ids
+    assert engine.snapshot() == before
+    assert engine.next_deadline() == deadline
 
 
 def _replay(history: Iterator[tuple[int, list[Event]]]) -> dict[str, Episode]:

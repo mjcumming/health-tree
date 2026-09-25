@@ -28,6 +28,8 @@ from health_tree._codec import (
 from health_tree._ids import UUIDv7Factory
 from health_tree.types import (
     BlockedBy,
+    CheckReference,
+    Coverage,
     EngineSettings,
     Episode,
     EpisodeForm,
@@ -37,6 +39,8 @@ from health_tree.types import (
     Event,
     Explanation,
     Finding,
+    Impact,
+    ImpactNode,
     JSONValue,
     Node,
     NodeCondition,
@@ -47,7 +51,10 @@ from health_tree.types import (
     Readiness,
     ReadinessAnswer,
     Resolution,
+    Rollup,
+    RollupCounts,
     Status,
+    View,
 )
 
 SCHEMA_VERSION = 1
@@ -424,6 +431,83 @@ class Engine:
             answer=answer,
             nodes=tuple(self._condition(name, frame) for name in causes),
             blocked_by=blocked_by,
+        )
+
+    def impact(self, node_id: str) -> Impact:
+        """Return potential dependents and importance, even when all are healthy.
+
+        The requested node is excluded from `nodes` but included in the
+        maximum importance. Each transitive dependent appears once.
+        """
+        self._require_node(node_id)
+        dependents = self._dependents(node_id)
+        return Impact(
+            node_id=node_id,
+            nodes=tuple(
+                ImpactNode(node_id=name, importance=self._nodes[name].importance)
+                for name in self._order
+                if name in dependents
+            ),
+            importance=max(
+                self._nodes[name].importance for name in {node_id, *dependents}
+            ),
+        )
+
+    def coverage(self) -> Coverage:
+        """Return missing checks, never-observed checks, and stale checks.
+
+        Evidence-only checks are included. Never-observed checks may also be
+        stale. Quiet windows and inhibition do not hide evidence gaps.
+        """
+        never_observed: list[CheckReference] = []
+        stale: list[CheckReference] = []
+        for node_id in self._order:
+            for check_id, state in self._checks[node_id].items():
+                reference = CheckReference(node_id=node_id, check_id=check_id)
+                if state.observation is None:
+                    never_observed.append(reference)
+                assert self._last is not None
+                if state.is_stale(self._last):
+                    stale.append(reference)
+        return Coverage(
+            no_checks=tuple(name for name in self._order if not self._checks[name]),
+            never_observed=tuple(never_observed),
+            stale=tuple(stale),
+        )
+
+    def rollup(self, view: View, group: str) -> Rollup:
+        """Count each selected node by its own status and episode membership.
+
+        Anchoring an open episode takes precedence over being recorded on
+        another. Unknown groups or selected members raise `KeyError`.
+        """
+        selected = view.groups[group]
+        for node_id in sorted(selected):
+            self._require_node(node_id)
+        by_status: dict[Status, set[str]] = {status: set() for status in Status}
+        if selected:
+            frame = self._current_frame()
+            for node_id in selected:
+                by_status[frame.own[node_id]].add(node_id)
+        anchors = {state.anchor for state in self._episodes.values()}
+        recorded = {
+            node_id
+            for state in self._episodes.values()
+            if state.view is not None
+            for node_id in state.view.recorded
+        }
+        return Rollup(
+            view_id=view.view_id,
+            group=group,
+            counts=tuple(
+                RollupCounts(
+                    own=status,
+                    clear=len(members - anchors - recorded),
+                    own_episode=len(members & anchors),
+                    recorded=len((members & recorded) - anchors),
+                )
+                for status, members in by_status.items()
+            ),
         )
 
     def _tick(self, now: datetime) -> None:

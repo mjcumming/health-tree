@@ -1,0 +1,87 @@
+id: scenario-35-coverage-evidence-gaps
+title: Coverage distinguishes never observed, expired, and stale evidence through restart
+covers: [scenario-35, scenario-60]
+start: 2026-09-24T12:00:00Z
+settings:
+  settle: 0s
+  rejoin_grace: 0s
+  startup_grace: 0s
+  coalesce_count: 3
+  coalesce_window: 60s
+graph:
+  - id: unchecked
+  - id: device
+    checks:
+      - {id: state, raise_hold: 0s, clear_hold: 0s, ttl: 10s, unknown_hold: 5s}
+  - id: cold
+    checks:
+      - {id: state, raise_hold: 0s, clear_hold: 0s, ttl: null, unknown_hold: 5s}
+  - id: evidence
+    checks:
+      - id: sample
+        affects_own: false
+        raise_hold: 0s
+        clear_hold: 0s
+        ttl: null
+        unknown_hold: 5s
+  - id: reported
+    checks:
+      - {id: state, raise_hold: 0s, clear_hold: 0s, ttl: null, unknown_hold: 5s}
+steps:
+  - at: 2026-09-24T12:00:00Z
+    quiet: {scope: all, until: 2026-09-24T12:01:00Z}
+    ingest:
+      - {node: device, check: state, status: pass, reason: ok}
+      - {node: reported, check: state, status: unknown, reason: unavailable}
+    expect:
+      events: []
+      queries:
+        coverage:
+          no_checks: [unchecked]
+          never_observed: [{node: cold, check: state}, {node: evidence, check: sample}]
+          stale: []
+  - at: 2026-09-24T12:00:10Z
+    expect:
+      events: []
+      queries:
+        coverage:
+          no_checks: [unchecked]
+          never_observed: [{node: cold, check: state}, {node: evidence, check: sample}]
+          stale:
+            - {node: cold, check: state}
+            - {node: evidence, check: sample}
+            - {node: reported, check: state}
+  - at: 2026-09-24T12:00:11Z
+    restart: true
+    expect:
+      events: []
+      queries:
+        coverage:
+          no_checks: [unchecked]
+          never_observed: [{node: cold, check: state}, {node: evidence, check: sample}]
+          stale:
+            - {node: cold, check: state}
+            - {node: evidence, check: sample}
+            - {node: reported, check: state}
+  - at: 2026-09-24T12:00:15Z
+    expect:
+      events: []
+      queries:
+        coverage:
+          no_checks: [unchecked]
+          never_observed: [{node: cold, check: state}, {node: evidence, check: sample}]
+          stale:
+            - {node: device, check: state}
+            - {node: cold, check: state}
+            - {node: evidence, check: sample}
+            - {node: reported, check: state}
+  - at: 2026-09-24T12:00:16Z
+    ingest:
+      - {node: device, check: state, status: pass, reason: ok}
+      - {node: cold, check: state, status: pass, reason: ok}
+      - {node: evidence, check: sample, status: pass, reason: ok}
+      - {node: reported, check: state, status: pass, reason: ok}
+    expect:
+      events: []
+      queries:
+        coverage: {no_checks: [unchecked], never_observed: [], stale: []}

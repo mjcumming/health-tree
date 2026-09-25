@@ -1,0 +1,83 @@
+id: story-06-ai-box
+title: The AI box shows up in coverage until it is watched, and its outage is not its update debt
+covers: [story-6]
+start: 2026-09-24T09:00:00Z
+settings:
+  settle: 2m
+  rejoin_grace: 1m
+  startup_grace: 0s
+  coalesce_count: 3
+  coalesce_window: 60s
+graph:
+  - id: ai_host
+    kind: host
+  - id: ai_service
+    kind: service
+    depends_on: [ai_host]
+  - id: ai_updates
+    kind: maintenance
+    labels:
+      subject: ai_host
+    checks:
+      - {id: update, raise_hold: 0s, clear_hold: 30s, ttl: null, unknown_hold: 1d, labels: {category: maintenance}}
+steps:
+  - at: 2026-09-24T09:00:00Z
+    ingest:
+      - {node: ai_updates, check: update, status: warn, reason: update_pending}
+    expect:
+      bind:
+        updates_ep: {opened: ai_updates}
+      events:
+        - {opened: {anchor: ai_updates, episode: $updates_ep, reasons: [update_pending]}}
+      queries:
+        coverage: {no_checks: [ai_host, ai_service], never_observed: [], stale: []}
+  - at: 2026-09-24T09:10:00Z
+    register:
+      id: ai_host
+      kind: host
+      checks:
+        - {id: ping, raise_hold: 0s, clear_hold: 30s, ttl: 5m, unknown_hold: 15m}
+    expect:
+      events: []
+      queries:
+        coverage:
+          no_checks: [ai_service]
+          never_observed: [{node: ai_host, check: ping}]
+          stale: []
+  - at: 2026-09-24T09:11:00Z
+    register:
+      id: ai_service
+      kind: service
+      depends_on: [ai_host]
+      checks:
+        - {id: inference, raise_hold: 0s, clear_hold: 30s, ttl: 5m, unknown_hold: 15m}
+    ingest:
+      - {node: ai_host, check: ping, status: pass, reason: reachable}
+    expect:
+      events: []
+  - at: 2026-09-24T09:12:00Z
+    ingest:
+      - {node: ai_host, check: ping, status: pass, reason: reachable}
+      - {node: ai_service, check: inference, status: fail, reason: no_answer}
+    expect:
+      bind:
+        service_ep: {opened: ai_service}
+      events:
+        - {opened: {anchor: ai_service, episode: $service_ep, reasons: [no_answer], recorded: []}}
+      open:
+        - {episode: $updates_ep, anchor: ai_updates}
+        - {episode: $service_ep, anchor: ai_service}
+      queries:
+        coverage: {no_checks: [], never_observed: [], stale: []}
+  - at: 2026-09-24T09:14:00Z
+    ingest:
+      - {node: ai_host, check: ping, status: pass, reason: reachable}
+      - {node: ai_service, check: inference, status: pass, reason: answered}
+    expect:
+      events: []
+  - at: 2026-09-24T09:14:30Z
+    expect:
+      events:
+        - {resolved: {episode: $service_ep, resolution: cleared}}
+      open:
+        - {episode: $updates_ep, anchor: ai_updates}

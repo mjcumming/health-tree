@@ -1,0 +1,48 @@
+id: story-07-eero-node-down
+title: A backyard Eero node going down is one episode whose impact is backyard music
+covers: [story-7]
+start: 2026-09-24T22:00:00Z
+settings:
+  settle: 2m
+  rejoin_grace: 1m
+  startup_grace: 0s
+  coalesce_count: 3
+  coalesce_window: 60s
+graph:
+  - id: eero_backyard
+    kind: network
+    checks:
+      - {id: link, raise_hold: 0s, clear_hold: 30s, ttl: 1h, unknown_hold: 15m}
+  - id: backyard_speakers
+    kind: device
+    depends_on: [eero_backyard]
+    checks:
+      - {id: state, raise_hold: 0s, clear_hold: 30s, ttl: 1h, unknown_hold: 15m}
+  - id: backyard_music
+    kind: function
+    depends_on: [backyard_speakers]
+steps:
+  - at: 2026-09-24T22:00:00Z
+    ingest:
+      - {node: eero_backyard, check: link, status: pass, reason: ok}
+      - {node: backyard_speakers, check: state, status: pass, reason: ok}
+    expect:
+      events: []
+  - at: 2026-09-24T22:01:00Z
+    ingest:
+      - {node: eero_backyard, check: link, status: fail, reason: offline}
+      - {node: backyard_speakers, check: state, status: fail, reason: unavailable}
+    expect:
+      bind:
+        eero_ep: {opened: eero_backyard}
+      events:
+        - {opened: {anchor: eero_backyard, episode: $eero_ep, recorded: [backyard_speakers]}}
+      open:
+        - {episode: $eero_ep, anchor: eero_backyard}
+      queries:
+        impact:
+          eero_backyard:
+            importance: normal
+            nodes:
+              - {node: backyard_speakers, importance: normal}
+              - {node: backyard_music, importance: normal}
