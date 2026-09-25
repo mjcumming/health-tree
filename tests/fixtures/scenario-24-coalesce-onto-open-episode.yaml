@@ -1,0 +1,87 @@
+id: scenario-24-coalesce-onto-open-episode
+title: Coalesced children join the parent's open episode, and members decide recovery
+covers: [scenario-24, scenario-46]
+start: 2026-09-24T03:00:00Z
+settings:
+  settle: 2m
+  rejoin_grace: 1m
+  startup_grace: 0s
+  coalesce_count: 3
+  coalesce_window: 60s
+graph:
+  - id: controller
+    checks:
+      - id: link
+        raise_hold: 0s
+        clear_hold: 30s
+        ttl: 10m
+        unknown_hold: 15m
+  - id: d1
+    depends_on: [controller]
+    checks:
+      - id: cmd
+        raise_hold: 0s
+        clear_hold: 30s
+        ttl: 10m
+        unknown_hold: 15m
+  - id: d2
+    depends_on: [controller]
+    checks:
+      - id: cmd
+        raise_hold: 0s
+        clear_hold: 30s
+        ttl: 10m
+        unknown_hold: 15m
+  - id: d3
+    depends_on: [controller]
+    checks:
+      - id: cmd
+        raise_hold: 0s
+        clear_hold: 30s
+        ttl: 10m
+        unknown_hold: 15m
+steps:
+  - at: 2026-09-24T03:00:00Z
+    ingest:
+      - {node: controller, check: link, status: warn, reason: degraded}
+      - {node: d1, check: cmd, status: pass, reason: ok}
+      - {node: d2, check: cmd, status: pass, reason: ok}
+      - {node: d3, check: cmd, status: pass, reason: ok}
+    expect:
+      bind:
+        controller_ep: {opened: controller}
+      events:
+        - {opened: {anchor: controller, episode: $controller_ep, reasons: [degraded]}}
+  - at: 2026-09-24T03:01:00Z
+    ingest:
+      - {node: d1, check: cmd, status: fail, reason: command_failed}
+      - {node: d2, check: cmd, status: fail, reason: command_failed}
+      - {node: d3, check: cmd, status: fail, reason: command_failed}
+    expect:
+      events:
+        - {updated: {episode: $controller_ep}}
+      open:
+        - {episode: $controller_ep, anchor: controller, status: fail}
+  - at: 2026-09-24T03:02:00Z
+    ingest:
+      - {node: controller, check: link, status: pass, reason: ok}
+    expect:
+      events: []
+  - at: 2026-09-24T03:02:31Z
+    expect:
+      events:
+        - {updated: {episode: $controller_ep}}
+      open:
+        - {episode: $controller_ep, anchor: controller, status: fail}
+  - at: 2026-09-24T03:04:00Z
+    ingest:
+      - {node: d1, check: cmd, status: pass, reason: ok}
+      - {node: d2, check: cmd, status: pass, reason: ok}
+      - {node: d3, check: cmd, status: pass, reason: ok}
+    expect:
+      events: []
+  - at: 2026-09-24T03:04:31Z
+    expect:
+      events:
+        - {resolved: {episode: $controller_ep, resolution: cleared}}
+      open: []

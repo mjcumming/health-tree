@@ -1,0 +1,72 @@
+id: scenario-47-group-absorbed-by-failing-anchor
+title: A group is absorbed when its anchor fails
+covers: [scenario-47]
+start: 2026-09-24T05:00:00Z
+settings:
+  settle: 2m
+  rejoin_grace: 1m
+  startup_grace: 0s
+  coalesce_count: 3
+  coalesce_window: 60s
+graph:
+  - id: controller
+    checks:
+      - id: link
+        raise_hold: 0s
+        clear_hold: 30s
+        ttl: 10m
+        unknown_hold: 15m
+  - id: d1
+    depends_on: [controller]
+    checks:
+      - id: cmd
+        raise_hold: 0s
+        clear_hold: 30s
+        ttl: 10m
+        unknown_hold: 15m
+  - id: d2
+    depends_on: [controller]
+    checks:
+      - id: cmd
+        raise_hold: 0s
+        clear_hold: 30s
+        ttl: 10m
+        unknown_hold: 15m
+  - id: d3
+    depends_on: [controller]
+    checks:
+      - id: cmd
+        raise_hold: 0s
+        clear_hold: 30s
+        ttl: 10m
+        unknown_hold: 15m
+steps:
+  - at: 2026-09-24T05:00:00Z
+    ingest:
+      - {node: controller, check: link, status: pass, reason: ok}
+      - {node: d1, check: cmd, status: pass, reason: ok}
+      - {node: d2, check: cmd, status: pass, reason: ok}
+      - {node: d3, check: cmd, status: pass, reason: ok}
+    expect:
+      events: []
+  - at: 2026-09-24T05:01:00Z
+    ingest:
+      - {node: d1, check: cmd, status: fail, reason: command_failed}
+      - {node: d2, check: cmd, status: fail, reason: command_failed}
+      - {node: d3, check: cmd, status: fail, reason: command_failed}
+    expect:
+      bind:
+        group_ep: {opened: controller}
+      events:
+        - {opened: {anchor: controller, episode: $group_ep}}
+  - at: 2026-09-24T05:02:00Z
+    ingest:
+      - {node: controller, check: link, status: fail, reason: unreachable}
+    expect:
+      bind:
+        controller_ep: {opened: controller}
+      events:
+        - {opened: {anchor: controller, episode: $controller_ep, reasons: [unreachable]}}
+        - {resolved: {episode: $group_ep, resolution: absorbed}}
+      open:
+        - {episode: $controller_ep, anchor: controller, status: fail}

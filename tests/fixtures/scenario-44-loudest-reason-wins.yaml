@@ -1,0 +1,90 @@
+id: scenario-44-loudest-reason-wins
+title: A failed command pages although its battery reason matches maintenance
+covers: [scenario-44]
+start: 2026-09-24T01:00:00Z
+settings:
+  settle: 2m
+  rejoin_grace: 1m
+  startup_grace: 0s
+  coalesce_count: 3
+  coalesce_window: 60s
+policy:
+  batch: 30s
+  recipients:
+    michael:
+      channels: [phone]
+      quiet_hours: "22:30-07:00"
+  digests:
+    morning:
+      at: "08:00"
+      to: michael
+  rules:
+    - match: {category: maintenance}
+      loudness: digest
+      digest: morning
+    - match: {status: fail, importance: [high, critical]}
+      loudness: urgent
+      to: michael
+    - match: {status: fail}
+      loudness: notify
+      to: michael
+    - match: {}
+      loudness: digest
+      digest: morning
+graph:
+  - id: lock
+    kind: device
+    checks:
+      - id: battery
+        raise_hold: 0s
+        clear_hold: 30s
+        ttl: 1d
+        unknown_hold: 15m
+        labels:
+          category: maintenance
+      - id: command
+        raise_hold: 0s
+        clear_hold: 30s
+        ttl: null
+        unknown_hold: 15m
+        labels:
+          category: operation
+  - id: front_door
+    kind: function
+    importance: high
+    depends_on: [lock]
+steps:
+  - at: 2026-09-24T01:00:00Z
+    ingest:
+      - {node: lock, check: battery, status: warn, reason: battery_low}
+    expect:
+      bind:
+        lock_ep: {opened: lock}
+      events:
+        - {opened: {anchor: lock, episode: $lock_ep, importance: high, reasons: [battery_low]}}
+      deliveries: []
+  - at: 2026-09-24T02:00:00Z
+    ingest:
+      - {node: lock, check: command, status: fail, reason: command_failed}
+    expect:
+      events:
+        - {updated: {episode: $lock_ep}}
+      deliveries:
+        - {loudness: urgent, episode: $lock_ep, to: michael}
+  - at: 2026-09-24T02:05:00Z
+    ingest:
+      - {node: lock, check: command, status: pass, reason: command_completed}
+    expect:
+      events: []
+      deliveries: []
+  - at: 2026-09-24T02:05:31Z
+    expect:
+      events:
+        - {updated: {episode: $lock_ep}}
+      open:
+        - {episode: $lock_ep, anchor: lock, status: warn}
+  - at: 2026-09-24T08:00:00Z
+    expect:
+      events: []
+      deliveries:
+        - {loudness: digest, digest: morning, episode: $lock_ep, to: michael}

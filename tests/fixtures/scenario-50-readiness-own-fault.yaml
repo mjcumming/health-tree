@@ -1,0 +1,54 @@
+id: scenario-50-readiness-own-fault
+title: Readiness says whether a function is blocked by its own fault or a dependency
+covers: [scenario-50]
+start: 2026-09-24T10:00:00Z
+settings:
+  settle: 2m
+  rejoin_grace: 1m
+  startup_grace: 0s
+  coalesce_count: 3
+  coalesce_window: 60s
+graph:
+  - id: hub
+    checks:
+      - id: link
+        raise_hold: 0s
+        clear_hold: 30s
+        ttl: 1h
+        unknown_hold: 15m
+  - id: f_own
+    kind: function
+    depends_on: [hub]
+    checks:
+      - id: selftest
+        raise_hold: 0s
+        clear_hold: 30s
+        ttl: 1h
+        unknown_hold: 15m
+  - id: dev
+    checks:
+      - id: state
+        raise_hold: 0s
+        clear_hold: 30s
+        ttl: 1h
+        unknown_hold: 15m
+  - id: f_ext
+    kind: function
+    depends_on: [dev]
+steps:
+  - at: 2026-09-24T10:00:00Z
+    ingest:
+      - {node: hub, check: link, status: pass, reason: ok}
+      - {node: f_own, check: selftest, status: fail, reason: selftest_failed}
+      - {node: dev, check: state, status: fail, reason: fault}
+    expect:
+      bind:
+        own_ep: {opened: f_own}
+        dev_ep: {opened: dev}
+      events:
+        - {opened: {anchor: f_own, episode: $own_ep, reasons: [selftest_failed]}}
+        - {opened: {anchor: dev, episode: $dev_ep, reasons: [fault]}}
+      queries:
+        readiness:
+          f_own: {answer: blocked, names: [f_own], by: own}
+          f_ext: {answer: blocked, names: [dev], by: dependency}

@@ -1,0 +1,40 @@
+id: scenario-19-restore-open-episode
+title: Restore keeps an open episode
+covers: [scenario-19]
+start: 2026-09-24T02:38:00Z
+settings:
+  settle: 2m
+  rejoin_grace: 1m
+  startup_grace: 2m
+  coalesce_count: 3
+  coalesce_window: 60s
+graph:
+  - id: host
+    checks:
+      - id: ping
+        raise_hold: 0s
+        clear_hold: 30s
+        ttl: 5m
+        unknown_hold: 15m
+steps:
+  - at: 2026-09-24T02:41:00Z
+    ingest:
+      - {node: host, check: ping, status: fail, reason: unreachable}
+    expect:
+      bind:
+        host_ep: {opened: host}
+      events:
+        - {opened: {anchor: host, episode: $host_ep}}
+      open:
+        - {episode: $host_ep, anchor: host}
+  - at: 2026-09-24T02:42:00Z
+    restart: true
+    expect:
+      events: []
+      open:
+        - {episode: $host_ep, anchor: host}
+  - at: 2026-09-24T02:44:01Z
+    expect:
+      events: []
+      open:
+        - {episode: $host_ep, anchor: host}

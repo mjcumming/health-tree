@@ -1,0 +1,76 @@
+id: scenario-43-maintenance-node-is-separate
+title: A maintenance node keeps its own episode
+covers: [scenario-43]
+start: 2026-09-24T02:00:00Z
+settings:
+  settle: 2m
+  rejoin_grace: 1m
+  startup_grace: 0s
+  coalesce_count: 3
+  coalesce_window: 60s
+graph:
+  - id: ai_host
+    kind: host
+    checks:
+      - id: ping
+        raise_hold: 0s
+        clear_hold: 30s
+        ttl: 5m
+        unknown_hold: 15m
+  - id: ai_service
+    kind: service
+    depends_on: [ai_host]
+    checks:
+      - id: probe
+        raise_hold: 0s
+        clear_hold: 30s
+        ttl: 5m
+        unknown_hold: 15m
+        labels:
+          category: fault
+  - id: ai_updates
+    kind: maintenance
+    labels:
+      subject: ai_host
+    checks:
+      - id: update
+        raise_hold: 0s
+        clear_hold: 30s
+        ttl: 1d
+        unknown_hold: 1d
+        labels:
+          category: maintenance
+steps:
+  - at: 2026-09-24T02:00:00Z
+    ingest:
+      - {node: ai_host, check: ping, status: pass, reason: reachable}
+      - {node: ai_service, check: probe, status: pass, reason: answered}
+      - {node: ai_updates, check: update, status: warn, reason: update_pending}
+    expect:
+      bind:
+        updates_ep: {opened: ai_updates}
+      events:
+        - {opened: {anchor: ai_updates, episode: $updates_ep, reasons: [update_pending]}}
+  - at: 2026-09-24T02:01:00Z
+    ingest:
+      - {node: ai_service, check: probe, status: fail, reason: no_answer}
+    expect:
+      bind:
+        service_ep: {opened: ai_service}
+      events:
+        - {opened: {anchor: ai_service, episode: $service_ep, reasons: [no_answer]}}
+      open:
+        - {episode: $updates_ep, anchor: ai_updates}
+        - {episode: $service_ep, anchor: ai_service}
+  - at: 2026-09-24T02:03:00Z
+    ingest:
+      - {node: ai_host, check: ping, status: pass, reason: reachable}
+      - {node: ai_service, check: probe, status: pass, reason: answered}
+    expect:
+      events: []
+  - at: 2026-09-24T02:03:31Z
+    expect:
+      events:
+        - {resolved: {episode: $service_ep, resolution: cleared}}
+      open:
+        - {episode: $updates_ep, anchor: ai_updates}

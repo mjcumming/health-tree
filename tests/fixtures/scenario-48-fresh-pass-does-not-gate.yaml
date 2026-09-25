@@ -1,0 +1,41 @@
+id: scenario-48-fresh-pass-does-not-gate
+title: A dependency that passed inside its ttl does not gate
+covers: [scenario-48]
+start: 2026-09-24T06:00:00Z
+settings:
+  settle: 2m
+  rejoin_grace: 1m
+  startup_grace: 0s
+  coalesce_count: 3
+  coalesce_window: 60s
+graph:
+  - id: hub
+    checks:
+      - id: link
+        raise_hold: 0s
+        clear_hold: 30s
+        ttl: 1h
+        unknown_hold: 15m
+  - id: device
+    depends_on: [hub]
+    checks:
+      - id: avail
+        raise_hold: 0s
+        clear_hold: 30s
+        ttl: 1h
+        unknown_hold: 15m
+steps:
+  - at: 2026-09-24T06:00:00Z
+    ingest:
+      - {node: hub, check: link, status: pass, reason: ok}
+      - {node: device, check: avail, status: pass, reason: ok}
+    expect:
+      events: []
+  - at: 2026-09-24T06:20:00Z
+    ingest:
+      - {node: device, check: avail, status: fail, reason: unreachable}
+    expect:
+      bind:
+        device_ep: {opened: device}
+      events:
+        - {opened: {anchor: device, episode: $device_ep, reasons: [unreachable]}}

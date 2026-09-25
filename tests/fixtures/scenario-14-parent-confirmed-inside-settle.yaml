@@ -1,0 +1,41 @@
+id: scenario-14-parent-confirmed-inside-settle
+title: Parent confirmed inside settle
+covers: [scenario-14]
+start: 2026-09-24T02:40:00Z
+settings:
+  settle: 2m
+  rejoin_grace: 1m
+  startup_grace: 0s
+  coalesce_count: 3
+  coalesce_window: 60s
+graph:
+  - id: host
+    checks:
+      - id: ping
+        raise_hold: 0s
+        clear_hold: 30s
+        ttl: 5m
+        unknown_hold: 15m
+  - id: camera
+    depends_on: [host]
+    checks:
+      - id: avail
+        raise_hold: 0s
+        clear_hold: 30s
+        ttl: 5m
+        unknown_hold: 15m
+steps:
+  - at: 2026-09-24T02:40:00Z
+    ingest:
+      - {node: camera, check: avail, status: fail, reason: unreachable}
+    expect:
+      events:
+        - {probe: host}
+  - at: 2026-09-24T02:40:30Z
+    ingest:
+      - {node: host, check: ping, status: fail, reason: unreachable}
+    expect:
+      bind:
+        host_ep: {opened: host}
+      events:
+        - {opened: {anchor: host, episode: $host_ep}}

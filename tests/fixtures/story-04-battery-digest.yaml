@@ -1,0 +1,78 @@
+id: story-04-battery-digest
+title: A quiet sensor is in the morning digest
+covers: [story-4, scenario-27]
+start: 2026-09-24T03:43:00Z
+settings:
+  settle: 2m
+  rejoin_grace: 1m
+  startup_grace: 0s
+  coalesce_count: 3
+  coalesce_window: 60s
+policy:
+  batch: 5s
+  recipients:
+    michael:
+      channels: [phone]
+      quiet_hours: "22:30-07:00"
+  digests:
+    morning:
+      at: "08:00"
+      to: michael
+  rules:
+    - match: {category: maintenance}
+      loudness: digest
+      digest: morning
+    - match: {status: fail, importance: [high, critical]}
+      loudness: urgent
+      to: michael
+    - match: {status: fail}
+      loudness: notify
+      to: michael
+    - match: {}
+      loudness: digest
+      digest: morning
+graph:
+  - id: sensor
+    kind: device
+    importance: low
+    checks:
+      - id: freshness
+        raise_hold: 0s
+        clear_hold: 30s
+        ttl: 15m
+        unknown_hold: 15m
+        labels:
+          category: maintenance
+        annotations:
+          remedy: Replace the battery
+  - id: lighting
+    kind: function
+    importance: high
+    depends_on: [sensor]
+steps:
+  - at: 2026-09-24T03:43:00Z
+    ingest:
+      - {node: sensor, check: freshness, status: pass, reason: fresh}
+    expect:
+      events: []
+      deliveries: []
+  - at: 2026-09-24T03:58:00Z
+    expect:
+      events: []
+      deliveries: []
+  - at: 2026-09-24T04:13:00Z
+    expect:
+      bind:
+        sensor_ep: {opened: sensor}
+      events:
+        - {opened: {anchor: sensor, episode: $sensor_ep, reasons: [stale]}}
+      deliveries: []
+  - at: 2026-09-24T08:00:00Z
+    expect:
+      events: []
+      deliveries:
+        - {loudness: digest, digest: morning, episode: $sensor_ep, to: michael}
+      queries:
+        explain:
+          lighting:
+            names: [sensor]

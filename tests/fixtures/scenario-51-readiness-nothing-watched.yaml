@@ -1,0 +1,24 @@
+id: scenario-51-readiness-nothing-watched
+title: A function with nothing watched under it is unknown
+covers: [scenario-51]
+start: 2026-09-24T11:00:00Z
+settings:
+  settle: 2m
+  rejoin_grace: 1m
+  startup_grace: 0s
+  coalesce_count: 3
+  coalesce_window: 60s
+graph:
+  - id: leaf
+  - id: mid
+    depends_on: [leaf]
+  - id: fn
+    kind: function
+    depends_on: [mid]
+steps:
+  - at: 2026-09-24T11:00:00Z
+    expect:
+      events: []
+      queries:
+        readiness:
+          fn: {answer: unknown, names: [leaf, mid, fn]}

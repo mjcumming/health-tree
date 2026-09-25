@@ -1,0 +1,712 @@
+"""Validate health-tree YAML fixtures against ADR 0012.
+
+The engine does not exist yet. This module checks the files that will drive it.
+"""
+
+from collections.abc import Set as AbstractSet
+from datetime import datetime
+from pathlib import Path
+import re
+from typing import Any
+
+import yaml
+
+FIXTURES = Path(__file__).parent / "fixtures"
+
+_ID = re.compile(r"^[a-z][a-z0-9_-]*$")
+_BIND = re.compile(r"^[a-z][a-z0-9_]*$")
+_DURATION = re.compile(r"^(?:(\d+)d)?(?:(\d+)h)?(?:(\d+)m)?(?:(\d+)s)?$")
+_CLOCK = re.compile(r"^(?:[01]\d|2[0-3]):[0-5]\d$")
+_QUIET = re.compile(r"^(?:[01]\d|2[0-3]):[0-5]\d-(?:[01]\d|2[0-3]):[0-5]\d$")
+_SETTINGS = (
+    "settle",
+    "rejoin_grace",
+    "startup_grace",
+    "coalesce_count",
+    "coalesce_window",
+)
+_CHECK_DURATIONS = ("raise_hold", "clear_hold", "ttl", "unknown_hold")
+_IMPORTANCE = frozenset({"low", "normal", "high", "critical"})
+_STATUS = frozenset({"pass", "unknown", "warn", "fail"})
+_LOUDNESS = frozenset({"record", "digest", "notify", "urgent"})
+_RESOLUTION = frozenset({"cleared", "removed", "absorbed"})
+_MATCH_KEYS = frozenset(
+    {"status", "importance", "reason", "category", "labels", "age", "due_within"}
+)
+_EVENT_KINDS = frozenset({"probe", "opened", "updated", "resolved"})
+_READINESS = frozenset({"ready", "degraded", "blocked", "unknown"})
+_BLOCKED_BY = frozenset({"own", "dependency"})
+
+
+class FixtureSchemaError(ValueError):
+    """A fixture does not match the ADR 0012 schema."""
+
+
+def validate_directory(path: Path = FIXTURES) -> None:
+    """Validate every YAML fixture in `path`."""
+    files = sorted(path.glob("*.yaml"))
+    if not files:
+        raise FixtureSchemaError(f"{path} has no fixtures")
+    errors: list[str] = []
+    for fixture in files:
+        try:
+            document = yaml.safe_load(fixture.read_text(encoding="utf-8"))
+            validate_fixture(document, filename=fixture.name)
+        except FixtureSchemaError as exc:
+            errors.append(str(exc))
+    if errors:
+        raise FixtureSchemaError("\n".join(errors))
+
+
+def validate_fixture(document: object, *, filename: str) -> None:
+    """Validate one fixture document."""
+    problems: list[str] = []
+    if not isinstance(document, dict):
+        raise FixtureSchemaError(f"{filename}: fixture must be a mapping")
+    data: dict[str, Any] = document
+    _require_keys(
+        data,
+        {"id", "title", "covers", "start", "settings", "graph", "steps"},
+        filename,
+        problems,
+    )
+    _reject_unknown(
+        data,
+        {"id", "title", "covers", "start", "settings", "policy", "graph", "steps"},
+        filename,
+        problems,
+    )
+    stem = filename.removesuffix(".yaml")
+    if data.get("id") != stem:
+        problems.append(f"{filename}: id {data.get('id')!r} does not match {stem}")
+    _string(data.get("title"), f"{filename}: title", problems)
+    _covers(data.get("covers"), filename, problems)
+    start = _datetime(data.get("start"), f"{filename}: start", problems)
+    _settings(data.get("settings"), filename, problems)
+    if "policy" in data:
+        _policy(data.get("policy"), filename, problems)
+    nodes = _graph(data.get("graph"), filename, problems)
+    _steps(
+        data.get("steps"),
+        filename=filename,
+        start=start,
+        nodes=nodes,
+        has_policy="policy" in data,
+        problems=problems,
+    )
+    if problems:
+        raise FixtureSchemaError("\n".join(problems))
+
+
+def _require_keys(
+    data: dict[str, Any],
+    required: set[str],
+    filename: str,
+    problems: list[str],
+) -> None:
+    missing = required - data.keys()
+    if missing:
+        problems.append(f"{filename}: missing {', '.join(sorted(missing))}")
+
+
+def _reject_unknown(
+    data: dict[str, Any],
+    allowed: AbstractSet[str],
+    where: str,
+    problems: list[str],
+) -> None:
+    extra = set(data) - allowed
+    if extra:
+        problems.append(f"{where}: unknown keys {', '.join(sorted(extra))}")
+
+
+def _string(value: object, where: str, problems: list[str]) -> None:
+    if not isinstance(value, str) or not value:
+        problems.append(f"{where} must be a non-empty string")
+
+
+def _covers(value: object, filename: str, problems: list[str]) -> None:
+    if not isinstance(value, list) or not value:
+        problems.append(f"{filename}: covers must be a non-empty list")
+        return
+    problems.extend(
+        f"{filename}: bad covers entry {item!r}"
+        for item in value
+        if not isinstance(item, str)
+        or re.fullmatch(r"(story|scenario)-\d+", item) is None
+    )
+
+
+def _datetime(value: object, where: str, problems: list[str]) -> datetime | None:
+    parsed = value if isinstance(value, datetime) else None
+    if isinstance(value, str):
+        try:
+            parsed = datetime.fromisoformat(value)
+        except ValueError:
+            problems.append(f"{where} is not a timestamp")
+            return None
+    if parsed is None:
+        problems.append(f"{where} must be a UTC timestamp")
+        return None
+    if parsed.tzinfo is None:
+        problems.append(f"{where} must include a timezone")
+        return None
+    return parsed
+
+
+def _duration(value: object, where: str, problems: list[str]) -> None:
+    if not isinstance(value, str) or not value or _DURATION.fullmatch(value) is None:
+        problems.append(f"{where} must be a duration such as 2m or 30s")
+
+
+def _settings(value: object, filename: str, problems: list[str]) -> None:
+    where = f"{filename}: settings"
+    if not isinstance(value, dict):
+        problems.append(f"{where} must be a mapping")
+        return
+    _reject_unknown(value, set(_SETTINGS), where, problems)
+    _require_keys(value, set(_SETTINGS), where, problems)
+    for name in ("settle", "rejoin_grace", "startup_grace", "coalesce_window"):
+        if name in value:
+            _duration(value[name], f"{where}.{name}", problems)
+    count = value.get("coalesce_count")
+    if not isinstance(count, int) or isinstance(count, bool) or count < 2:
+        problems.append(f"{where}.coalesce_count must be an integer >= 2")
+
+
+def _policy(value: object, filename: str, problems: list[str]) -> None:
+    where = f"{filename}: policy"
+    if not isinstance(value, dict):
+        problems.append(f"{where} must be a mapping")
+        return
+    allowed = {"batch", "recipients", "digests", "rules"}
+    _reject_unknown(value, allowed, where, problems)
+    _require_keys(value, allowed, where, problems)
+    if "batch" in value:
+        _duration(value["batch"], f"{where}.batch", problems)
+    recipients = value.get("recipients")
+    if not isinstance(recipients, dict) or not recipients:
+        problems.append(f"{where}.recipients must be a non-empty mapping")
+        recipients = {}
+    for name, recipient in recipients.items():
+        _recipient(name, recipient, where, problems)
+    digests = value.get("digests")
+    if not isinstance(digests, dict):
+        problems.append(f"{where}.digests must be a mapping")
+        digests = {}
+    for name, digest in digests.items():
+        _digest(name, digest, set(recipients), where, problems)
+    rules = value.get("rules")
+    if not isinstance(rules, list) or not rules:
+        problems.append(f"{where}.rules must be a non-empty list")
+        return
+    for index, rule in enumerate(rules):
+        _rule(rule, set(digests), f"{where}.rules[{index}]", problems)
+
+
+def _recipient(
+    name: object,
+    value: object,
+    where: str,
+    problems: list[str],
+) -> None:
+    path = f"{where}.recipients.{name}"
+    if not isinstance(name, str) or not _ID.fullmatch(name):
+        problems.append(f"{path}: bad recipient id")
+    if not isinstance(value, dict):
+        problems.append(f"{path} must be a mapping")
+        return
+    _reject_unknown(value, {"channels", "quiet_hours", "sites"}, path, problems)
+    channels = value.get("channels")
+    if not isinstance(channels, list) or not all(isinstance(c, str) for c in channels):
+        problems.append(f"{path}.channels must be a list of strings")
+    quiet = value.get("quiet_hours")
+    if quiet is not None and (
+        not isinstance(quiet, str) or _QUIET.fullmatch(quiet) is None
+    ):
+        problems.append(f"{path}.quiet_hours must look like 22:30-07:00")
+
+
+def _digest(
+    name: object,
+    value: object,
+    recipients: set[str],
+    where: str,
+    problems: list[str],
+) -> None:
+    path = f"{where}.digests.{name}"
+    if not isinstance(value, dict):
+        problems.append(f"{path} must be a mapping")
+        return
+    _reject_unknown(value, {"at", "to"}, path, problems)
+    at = value.get("at")
+    if not isinstance(at, str) or _CLOCK.fullmatch(at) is None:
+        problems.append(f"{path}.at must be HH:MM")
+    if value.get("to") not in recipients:
+        problems.append(f"{path}.to is not a recipient")
+
+
+def _rule(
+    value: object,
+    digests: set[str],
+    where: str,
+    problems: list[str],
+) -> None:
+    if not isinstance(value, dict):
+        problems.append(f"{where} must be a mapping")
+        return
+    _reject_unknown(
+        value,
+        {"match", "loudness", "to", "digest", "remind_every", "escalate_after"},
+        where,
+        problems,
+    )
+    match = value.get("match")
+    if not isinstance(match, dict):
+        problems.append(f"{where}.match must be a mapping")
+    else:
+        _reject_unknown(match, _MATCH_KEYS, f"{where}.match", problems)
+    if value.get("loudness") not in _LOUDNESS:
+        problems.append(f"{where}.loudness is not a loudness")
+    if "digest" in value and value["digest"] not in digests:
+        problems.append(f"{where}.digest is not a digest")
+    for name in ("remind_every", "escalate_after"):
+        if name in value:
+            _duration(value[name], f"{where}.{name}", problems)
+
+
+def _graph(value: object, filename: str, problems: list[str]) -> dict[str, set[str]]:
+    """Return node id to check ids. Empty when the graph is unusable."""
+    where = f"{filename}: graph"
+    if not isinstance(value, list) or not value:
+        problems.append(f"{where} must be a non-empty list")
+        return {}
+    nodes: dict[str, set[str]] = {}
+    edges: dict[str, list[str]] = {}
+    for index, node in enumerate(value):
+        node_id, check_ids, depends = _node(node, f"{where}[{index}]", problems)
+        if node_id is None:
+            continue
+        if node_id in nodes:
+            problems.append(f"{where}: duplicate node {node_id}")
+        nodes[node_id] = check_ids
+        edges[node_id] = depends
+    problems.extend(
+        f"{filename}: {node_id} depends on unknown {target}"
+        for node_id, depends in edges.items()
+        for target in depends
+        if target not in nodes
+    )
+    _cycles(edges, filename, problems)
+    return nodes
+
+
+def _node(
+    value: object,
+    where: str,
+    problems: list[str],
+) -> tuple[str | None, set[str], list[str]]:
+    if not isinstance(value, dict):
+        problems.append(f"{where} must be a mapping")
+        return None, set(), []
+    _reject_unknown(
+        value,
+        {"id", "kind", "importance", "depends_on", "labels", "checks"},
+        where,
+        problems,
+    )
+    node_id = value.get("id")
+    if not isinstance(node_id, str) or not _ID.fullmatch(node_id):
+        problems.append(f"{where}.id must be a lowercase identifier")
+        node_id = None
+    importance = value.get("importance", "normal")
+    if importance not in _IMPORTANCE:
+        problems.append(f"{where}.importance is not an importance")
+    depends = value.get("depends_on", [])
+    if not isinstance(depends, list) or not all(
+        isinstance(item, str) for item in depends
+    ):
+        problems.append(f"{where}.depends_on must be a list of ids")
+        depends = []
+    checks = value.get("checks", [])
+    check_ids: set[str] = set()
+    if not isinstance(checks, list):
+        problems.append(f"{where}.checks must be a list")
+    else:
+        for index, check in enumerate(checks):
+            check_id = _check(check, f"{where}.checks[{index}]", problems)
+            if check_id is None:
+                continue
+            if check_id in check_ids:
+                problems.append(f"{where}: duplicate check {check_id}")
+            check_ids.add(check_id)
+    return node_id, check_ids, depends
+
+
+def _check(value: object, where: str, problems: list[str]) -> str | None:
+    if not isinstance(value, dict):
+        problems.append(f"{where} must be a mapping")
+        return None
+    _reject_unknown(
+        value,
+        {"id", "affects_own", "labels", "annotations", *_CHECK_DURATIONS},
+        where,
+        problems,
+    )
+    check_id = value.get("id")
+    if not isinstance(check_id, str) or not _ID.fullmatch(check_id):
+        problems.append(f"{where}.id must be a lowercase identifier")
+        check_id = None
+    for name in _CHECK_DURATIONS:
+        if name not in value:
+            problems.append(f"{where} missing {name}")
+        elif not (name == "ttl" and value[name] is None):
+            _duration(value[name], f"{where}.{name}", problems)
+    if "affects_own" in value and not isinstance(value["affects_own"], bool):
+        problems.append(f"{where}.affects_own must be a boolean")
+    return check_id
+
+
+def _cycles(
+    edges: dict[str, list[str]],
+    filename: str,
+    problems: list[str],
+) -> None:
+    visiting: set[str] = set()
+    visited: set[str] = set()
+
+    def walk(node: str) -> None:
+        visiting.add(node)
+        for target in edges.get(node, []):
+            if target in visiting:
+                problems.append(f"{filename}: cycle through {node} -> {target}")
+            elif target not in visited and target in edges:
+                walk(target)
+        visiting.remove(node)
+        visited.add(node)
+
+    for node in edges:
+        if node not in visited:
+            walk(node)
+
+
+def _steps(
+    value: object,
+    *,
+    filename: str,
+    start: datetime | None,
+    nodes: dict[str, set[str]],
+    has_policy: bool,
+    problems: list[str],
+) -> None:
+    where = f"{filename}: steps"
+    if not isinstance(value, list) or not value:
+        problems.append(f"{where} must be a non-empty list")
+        return
+    bound: set[str] = set()
+    previous_step: datetime | None = None
+    for index, step in enumerate(value):
+        path = f"{where}[{index}]"
+        if not isinstance(step, dict):
+            problems.append(f"{path} must be a mapping")
+            continue
+        _reject_unknown(step, {"at", "ingest", "restart", "expect"}, path, problems)
+        at = _datetime(step.get("at"), f"{path}.at", problems)
+        if at is not None and start is not None and at < start:
+            problems.append(f"{path}.at must not be before start")
+        if at is not None and previous_step is not None and at <= previous_step:
+            problems.append(f"{path}.at must be after the previous step")
+        if at is not None:
+            previous_step = at
+        if "ingest" in step and step.get("restart") is True:
+            problems.append(f"{path} cannot both ingest and restart")
+        if "ingest" in step:
+            _ingest(step["ingest"], nodes, path, problems)
+        if "restart" in step and step["restart"] is not True:
+            problems.append(f"{path}.restart must be true")
+        expect = step.get("expect")
+        if not isinstance(expect, dict):
+            problems.append(f"{path}.expect must be a mapping")
+            continue
+        _expect(expect, path, nodes, bound, has_policy, problems)
+
+
+def _ingest(
+    value: object,
+    nodes: dict[str, set[str]],
+    where: str,
+    problems: list[str],
+) -> None:
+    if not isinstance(value, list) or not value:
+        problems.append(f"{where}.ingest must be a non-empty list")
+        return
+    for index, item in enumerate(value):
+        path = f"{where}.ingest[{index}]"
+        if not isinstance(item, dict):
+            problems.append(f"{path} must be a mapping")
+            continue
+        _reject_unknown(
+            item,
+            {"node", "check", "status", "reason", "message", "evidence", "due_at"},
+            path,
+            problems,
+        )
+        node = item.get("node")
+        check = item.get("check")
+        if (
+            node not in nodes
+            or not isinstance(check, str)
+            or check not in nodes.get(str(node), set())
+        ):
+            problems.append(f"{path} does not name a registered check")
+        if item.get("status") not in _STATUS:
+            problems.append(f"{path}.status is not a status")
+        _string(item.get("reason"), f"{path}.reason", problems)
+        if "due_at" in item:
+            _datetime(item["due_at"], f"{path}.due_at", problems)
+
+
+def _expect(
+    expect: dict[str, Any],
+    where: str,
+    nodes: dict[str, set[str]],
+    bound: set[str],
+    has_policy: bool,
+    problems: list[str],
+) -> None:
+    path = f"{where}.expect"
+    _reject_unknown(
+        expect,
+        {"bind", "events", "deliveries", "open", "queries"},
+        path,
+        problems,
+    )
+    if "events" not in expect:
+        problems.append(f"{path} must list events, even when the list is empty")
+        events: list[Any] = []
+    else:
+        events = expect["events"] if isinstance(expect["events"], list) else []
+        if not isinstance(expect["events"], list):
+            problems.append(f"{path}.events must be a list")
+    if "bind" in expect:
+        _bind(expect["bind"], events, f"{path}.bind", bound, problems)
+    _events(events, nodes, bound, f"{path}.events", problems)
+    if "deliveries" in expect:
+        if not has_policy:
+            problems.append(f"{path}.deliveries requires a policy")
+        _deliveries(expect["deliveries"], bound, f"{path}.deliveries", problems)
+    if "open" in expect:
+        _open(expect["open"], nodes, bound, f"{path}.open", problems)
+    if "queries" in expect:
+        _queries(expect["queries"], nodes, f"{path}.queries", problems)
+
+
+def _bind(
+    value: object,
+    events: list[Any],
+    where: str,
+    bound: set[str],
+    problems: list[str],
+) -> None:
+    if not isinstance(value, dict) or not value:
+        problems.append(f"{where} must be a non-empty mapping")
+        return
+    for name, spec in value.items():
+        if not isinstance(name, str) or not _BIND.fullmatch(name):
+            problems.append(f"{where}: bad bind name {name!r}")
+            continue
+        if name in bound:
+            problems.append(f"{where}: {name} is already bound")
+        if not isinstance(spec, dict) or set(spec) != {"opened"}:
+            problems.append(f"{where}.{name} must be {{opened: anchor}}")
+            continue
+        anchor = spec["opened"]
+        opened = [
+            event
+            for event in events
+            if isinstance(event, dict)
+            and set(event) == {"opened"}
+            and isinstance(event["opened"], dict)
+            and event["opened"].get("anchor") == anchor
+        ]
+        if len(opened) != 1:
+            problems.append(f"{where}.{name} does not match one opened event")
+        bound.add(name)
+
+
+def _events(
+    events: list[Any],
+    nodes: dict[str, set[str]],
+    bound: set[str],
+    where: str,
+    problems: list[str],
+) -> None:
+    for index, event in enumerate(events):
+        path = f"{where}[{index}]"
+        if not isinstance(event, dict) or len(event) != 1:
+            problems.append(f"{path} must name one event kind")
+            continue
+        kind, body = next(iter(event.items()))
+        if kind not in _EVENT_KINDS:
+            problems.append(f"{path} has unknown kind {kind}")
+            continue
+        if kind == "probe":
+            if body not in nodes:
+                problems.append(f"{path} probes an unknown node")
+            continue
+        if not isinstance(body, dict):
+            problems.append(f"{path}.{kind} must be a mapping")
+            continue
+        _event_body(kind, body, nodes, bound, path, problems)
+
+
+def _event_body(
+    kind: str,
+    body: dict[str, Any],
+    nodes: dict[str, set[str]],
+    bound: set[str],
+    where: str,
+    problems: list[str],
+) -> None:
+    if kind == "opened":
+        _reject_unknown(
+            body, {"anchor", "episode", "importance", "reasons"}, where, problems
+        )
+        if body.get("anchor") not in nodes:
+            problems.append(f"{where}.anchor is not a node")
+        if "episode" in body:
+            _ref(body["episode"], bound, f"{where}.episode", problems)
+        if "importance" in body and body["importance"] not in _IMPORTANCE:
+            problems.append(f"{where}.importance is not an importance")
+        reasons = body.get("reasons")
+        if "reasons" in body and (
+            not isinstance(reasons, list)
+            or not all(isinstance(r, str) for r in reasons)
+        ):
+            problems.append(f"{where}.reasons must be a list of strings")
+        return
+    episode = body.get("episode")
+    _ref(episode, bound, f"{where}.episode", problems)
+    if kind == "resolved":
+        if body.get("resolution") not in _RESOLUTION:
+            problems.append(f"{where}.resolution is not a resolution")
+        _reject_unknown(body, {"episode", "resolution"}, where, problems)
+    else:
+        _reject_unknown(body, {"episode", "anchor"}, where, problems)
+
+
+def _deliveries(
+    value: object,
+    bound: set[str],
+    where: str,
+    problems: list[str],
+) -> None:
+    if not isinstance(value, list):
+        problems.append(f"{where} must be a list")
+        return
+    for index, delivery in enumerate(value):
+        path = f"{where}[{index}]"
+        if not isinstance(delivery, dict):
+            problems.append(f"{path} must be a mapping")
+            continue
+        _reject_unknown(
+            delivery, {"loudness", "digest", "episode", "to"}, path, problems
+        )
+        if delivery.get("loudness") not in _LOUDNESS:
+            problems.append(f"{path}.loudness is not a loudness")
+        _ref(delivery.get("episode"), bound, f"{path}.episode", problems)
+
+
+def _open(
+    value: object,
+    nodes: dict[str, set[str]],
+    bound: set[str],
+    where: str,
+    problems: list[str],
+) -> None:
+    if not isinstance(value, list):
+        problems.append(f"{where} must be a list")
+        return
+    for index, episode in enumerate(value):
+        path = f"{where}[{index}]"
+        if not isinstance(episode, dict):
+            problems.append(f"{path} must be a mapping")
+            continue
+        _reject_unknown(
+            episode, {"episode", "anchor", "status", "importance"}, path, problems
+        )
+        _ref(episode.get("episode"), bound, f"{path}.episode", problems)
+        if episode.get("anchor") not in nodes:
+            problems.append(f"{path}.anchor is not a node")
+
+
+def _queries(
+    value: object,
+    nodes: dict[str, set[str]],
+    where: str,
+    problems: list[str],
+) -> None:
+    if not isinstance(value, dict) or not value:
+        problems.append(f"{where} must be a non-empty mapping")
+        return
+    _reject_unknown(value, {"explain", "readiness"}, where, problems)
+    if "explain" in value:
+        _explain(value["explain"], nodes, f"{where}.explain", problems)
+    if "readiness" in value:
+        _readiness(value["readiness"], nodes, f"{where}.readiness", problems)
+
+
+def _explain(
+    value: object,
+    nodes: dict[str, set[str]],
+    where: str,
+    problems: list[str],
+) -> None:
+    if not isinstance(value, dict):
+        problems.append(f"{where} must be a mapping")
+        return
+    for node, spec in value.items():
+        path = f"{where}.{node}"
+        if node not in nodes:
+            problems.append(f"{path} is not a node")
+        if not isinstance(spec, dict) or set(spec) != {"names"}:
+            problems.append(f"{path} must be {{names: [node ids]}}")
+            continue
+        names = spec["names"]
+        if not isinstance(names, list) or any(name not in nodes for name in names):
+            problems.append(f"{path}.names must be node ids")
+
+
+def _readiness(
+    value: object,
+    nodes: dict[str, set[str]],
+    where: str,
+    problems: list[str],
+) -> None:
+    if not isinstance(value, dict) or not value:
+        problems.append(f"{where} must be a non-empty mapping")
+        return
+    for node, spec in value.items():
+        path = f"{where}.{node}"
+        if node not in nodes:
+            problems.append(f"{path} is not a node")
+        if not isinstance(spec, dict):
+            problems.append(f"{path} must be a mapping")
+            continue
+        _reject_unknown(spec, {"answer", "names", "by"}, path, problems)
+        answer = spec.get("answer")
+        if answer not in _READINESS:
+            problems.append(f"{path}.answer is not a readiness answer")
+        names = spec.get("names")
+        if not isinstance(names, list) or any(name not in nodes for name in names):
+            problems.append(f"{path}.names must be node ids")
+        if "by" in spec and (answer != "blocked" or spec["by"] not in _BLOCKED_BY):
+            problems.append(f"{path}.by must be own or dependency, for blocked only")
+
+
+def _ref(value: object, bound: set[str], where: str, problems: list[str]) -> None:
+    if not isinstance(value, str) or not value.startswith("$"):
+        problems.append(f"{where} must be a $name bound earlier")
+        return
+    if value[1:] not in bound:
+        problems.append(f"{where} uses unbound {value}")

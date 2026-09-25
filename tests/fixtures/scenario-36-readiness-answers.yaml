@@ -1,0 +1,68 @@
+id: scenario-36-readiness-answers
+title: Readiness is degraded, blocked, or unknown, and stale is unknown
+covers: [scenario-36]
+start: 2026-09-24T09:00:00Z
+settings:
+  settle: 2m
+  rejoin_grace: 1m
+  startup_grace: 0s
+  coalesce_count: 3
+  coalesce_window: 60s
+graph:
+  - id: dev_warn
+    checks:
+      - id: state
+        raise_hold: 0s
+        clear_hold: 30s
+        ttl: 1h
+        unknown_hold: 15m
+  - id: dev_fail
+    checks:
+      - id: state
+        raise_hold: 0s
+        clear_hold: 30s
+        ttl: 1h
+        unknown_hold: 15m
+  - id: dev_quiet
+    checks:
+      - id: fresh
+        raise_hold: 0s
+        clear_hold: 30s
+        ttl: 5m
+        unknown_hold: 5m
+  - id: f_warn
+    kind: function
+    depends_on: [dev_warn]
+  - id: f_fail
+    kind: function
+    depends_on: [dev_fail]
+  - id: f_quiet
+    kind: function
+    depends_on: [dev_quiet]
+steps:
+  - at: 2026-09-24T09:00:00Z
+    ingest:
+      - {node: dev_warn, check: state, status: warn, reason: degraded}
+      - {node: dev_fail, check: state, status: fail, reason: fault}
+      - {node: dev_quiet, check: fresh, status: pass, reason: fresh}
+    expect:
+      bind:
+        warn_ep: {opened: dev_warn}
+        fail_ep: {opened: dev_fail}
+      events:
+        - {opened: {anchor: dev_warn, episode: $warn_ep, reasons: [degraded]}}
+        - {opened: {anchor: dev_fail, episode: $fail_ep, reasons: [fault]}}
+      queries:
+        readiness:
+          f_warn: {answer: degraded, names: [dev_warn]}
+          f_fail: {answer: blocked, names: [dev_fail], by: dependency}
+          f_quiet: {answer: ready, names: []}
+  - at: 2026-09-24T09:10:01Z
+    expect:
+      bind:
+        quiet_ep: {opened: dev_quiet}
+      events:
+        - {opened: {anchor: dev_quiet, episode: $quiet_ep, reasons: [stale]}}
+      queries:
+        readiness:
+          f_quiet: {answer: unknown, names: [dev_quiet]}

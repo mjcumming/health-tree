@@ -1,0 +1,85 @@
+id: story-08-garage-door
+title: The garage door does not close
+covers: [story-8]
+start: 2026-09-24T22:50:00Z
+settings:
+  settle: 2m
+  rejoin_grace: 1m
+  startup_grace: 0s
+  coalesce_count: 3
+  coalesce_window: 60s
+policy:
+  batch: 30s
+  recipients:
+    michael:
+      channels: [phone]
+      quiet_hours: "22:30-07:00"
+  digests:
+    morning:
+      at: "08:00"
+      to: michael
+  rules:
+    - match: {category: operation, importance: [high, critical]}
+      loudness: urgent
+      to: michael
+    - match: {category: maintenance}
+      loudness: digest
+      digest: morning
+    - match: {status: fail}
+      loudness: notify
+      to: michael
+    - match: {}
+      loudness: digest
+      digest: morning
+graph:
+  - id: hub
+    kind: device
+    checks:
+      - id: link
+        raise_hold: 0s
+        clear_hold: 30s
+        ttl: 1h
+        unknown_hold: 15m
+  - id: garage_door
+    kind: device
+    depends_on: [hub]
+    checks:
+      - id: command
+        raise_hold: 0s
+        clear_hold: 30s
+        ttl: null
+        unknown_hold: 15m
+        labels:
+          category: operation
+  - id: garage
+    kind: function
+    importance: high
+    depends_on: [garage_door]
+steps:
+  - at: 2026-09-24T22:50:00Z
+    ingest:
+      - {node: hub, check: link, status: pass, reason: ok}
+      - {node: garage_door, check: command, status: pass, reason: command_completed}
+    expect:
+      events: []
+      deliveries: []
+  - at: 2026-09-24T23:10:30Z
+    ingest:
+      - {node: garage_door, check: command, status: fail, reason: command_failed, message: Told to close at 23:10 and still open}
+    expect:
+      bind:
+        door_ep: {opened: garage_door}
+      events:
+        - {opened: {anchor: garage_door, episode: $door_ep, importance: high, reasons: [command_failed]}}
+      deliveries:
+        - {loudness: urgent, episode: $door_ep, to: michael}
+  - at: 2026-09-24T23:11:00Z
+    ingest:
+      - {node: garage_door, check: command, status: pass, reason: command_completed}
+    expect:
+      events: []
+  - at: 2026-09-24T23:11:31Z
+    expect:
+      events:
+        - {resolved: {episode: $door_ep, resolution: cleared}}
+      open: []
