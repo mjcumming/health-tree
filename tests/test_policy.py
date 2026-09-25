@@ -280,3 +280,134 @@ def test_a_deadline_is_a_policy_deadline() -> None:
     assert policy.handle(opened, T0, CONTEXT) == []
     assert policy.next_deadline() == T0 + 2 * HOUR
     assert _kinds(policy.advance(T0 + 2 * HOUR, CONTEXT)) == [("urgent", "")]
+
+
+@pytest.mark.parametrize("loudness", [Loudness.NOTIFY, Loudness.URGENT])
+def test_shelf_holds_reminders(loudness: Loudness) -> None:
+    """Scenario 72: shelving holds a reminder already due."""
+    policy = _policy(
+        Rule(match=Match(), loudness=loudness, to=("michael",), remind_every=HOUR)
+    )
+    policy.handle(EpisodeOpened(episode=_episode()), T0, CONTEXT)
+    policy.advance(at(30), CONTEXT)
+    policy.shelve("e1", T0 + 3 * HOUR, at(40))
+    assert policy.advance(T0 + 2 * HOUR, CONTEXT) == []
+    assert policy.next_deadline() == T0 + 3 * HOUR
+    result = policy.advance(T0 + 3 * HOUR, CONTEXT)
+    assert isinstance(result[0], Notification)
+    assert result[0].cause == "remind"
+
+
+def test_activation_preserves_age_and_explanation_is_detached() -> None:
+    """Scenario 73: attention clocks do not rewrite episode age matches."""
+    policy = _policy(
+        Rule(
+            match=Match(age=HOUR),
+            loudness=Loudness.NOTIFY,
+            to=("michael",),
+            escalate_after=HOUR,
+        ),
+        Rule(match=Match(), loudness=Loudness.RECORD),
+    )
+    policy.handle(EpisodeOpened(episode=_episode()), T0, CONTEXT)
+    assert policy.activate(T0 + 2 * HOUR, CONTEXT) == []
+    state = policy.snapshot()
+    detail = policy.explain("e1")
+    assert detail["loudness"] == "notify"
+    assert detail["opened_at"] == T0.isoformat()
+    assert detail["attention_since"] == (T0 + 2 * HOUR).isoformat()
+    assert detail["rule_index"] == 0
+    detail["pending"] = {}
+    assert policy.snapshot() == state
+    sent = policy.advance(T0 + 2 * HOUR + timedelta(seconds=30), CONTEXT)
+    assert isinstance(sent[0], Notification)
+    assert sent[0].cause == "activate"
+    with pytest.raises(KeyError):
+        policy.explain("missing")
+
+
+def test_record_after_delivery_never_reminds() -> None:
+    """Scenario 72: a lower record rule with destinations cannot send reminders."""
+    policy = _policy(
+        Rule(
+            match=Match(age=HOUR),
+            loudness=Loudness.RECORD,
+            to=("michael",),
+            remind_every=HOUR,
+        ),
+        Rule(match=Match(), loudness=Loudness.URGENT, to=("michael",)),
+    )
+    policy.handle(EpisodeOpened(episode=_episode()), T0, CONTEXT)
+    assert policy.advance(T0 + 2 * HOUR, CONTEXT) == []
+    assert policy.next_deadline() == T0 + 20 * HOUR
+
+
+def test_legacy_policy_snapshot_restores() -> None:
+    """Schema one has no attention origin or pending delivery cause."""
+    policy = _policy(Rule(match=Match(), loudness=Loudness.NOTIFY, to=("michael",)))
+    policy.handle(EpisodeOpened(episode=_episode()), T0, CONTEXT)
+    state = json.loads(json.dumps(policy.snapshot()))
+    state["schema_version"] = 1
+    for tracked in state["tracked"]:
+        del tracked["attention_since"]
+        del tracked["sent_at"]
+        for pending in tracked["pending"]:
+            del pending["cause"]
+    restored = _policy(Rule(match=Match(), loudness=Loudness.NOTIFY, to=("michael",)))
+    restored.restore(state, at(10))
+    assert _kinds(restored.advance(at(30), CONTEXT)) == [("notify", "")]
+
+
+def test_restore_crossing_escalation_emits_once() -> None:
+    """Scenario 73: downtime cannot silently consume an escalation threshold."""
+    rules = (
+        Rule(
+            match=Match(),
+            loudness=Loudness.NOTIFY,
+            to=("michael",),
+            escalate_after=HOUR,
+        ),
+    )
+    old = _policy(*rules)
+    old.handle(EpisodeOpened(episode=_episode()), T0, CONTEXT)
+    old.advance(at(30), CONTEXT)
+    new = _policy(*rules)
+    new.restore(old.snapshot(), T0 + 2 * HOUR)
+    result = new.advance(T0 + 2 * HOUR, CONTEXT)
+    assert isinstance(result[0], Notification)
+    assert result[0].cause == "escalate"
+    assert new.advance(T0 + 2 * HOUR, CONTEXT) == []
+
+
+def test_recipient_quiet_hours_do_not_block_other_reminders() -> None:
+    """Scenario 72: each recipient has an independent reminder clock."""
+    policy = Policy(
+        PolicyConfig(
+            batch=timedelta(0),
+            timezone=UTC,
+            digests={},
+            recipients={
+                "awake": Recipient(channels=("phone",)),
+                "quiet": Recipient(
+                    channels=("phone",),
+                    quiet_hours=QuietHours(start=time(12), end=time(15)),
+                ),
+            },
+            rules=(
+                Rule(
+                    match=Match(),
+                    loudness=Loudness.NOTIFY,
+                    to=("awake", "quiet"),
+                    remind_every=HOUR,
+                ),
+            ),
+        )
+    )
+    policy.handle(EpisodeOpened(episode=_episode()), T0, CONTEXT)
+    assert [item.recipient for item in policy.advance(T0, CONTEXT)] == ["awake"]
+    assert policy.next_deadline() == T0 + HOUR
+    assert [item.recipient for item in policy.advance(T0 + HOUR, CONTEXT)] == ["awake"]
+    assert [item.recipient for item in policy.advance(T0 + 3 * HOUR, CONTEXT)] == [
+        "quiet",
+        "awake",
+    ]

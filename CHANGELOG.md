@@ -4,6 +4,16 @@ All notable changes to this project are documented here. The format follows [Kee
 
 ## [Unreleased]
 
+## [0.2.0] - 2026-09-25
+
+### Added
+
+- Explicit attention activation, read-only policy explanations and delivery causes.
+
+### Fixed
+
+- Reminders respect each recipient's quiet hours, shelving and record-only decisions. Escalation thresholds crossed during restart remain deliverable.
+
 ## [0.1.0] - 2026-09-25
 
 ### Added

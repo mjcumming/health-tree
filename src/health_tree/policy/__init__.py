@@ -47,7 +47,7 @@ from health_tree.types import (
     Rule,
 )
 
-SCHEMA_VERSION = 1
+SCHEMA_VERSION = 2
 """The version of the data `Policy.snapshot` returns."""
 
 _ZERO = timedelta(0)
@@ -70,6 +70,7 @@ _SILENT = _Decision(loudness=Loudness.RECORD, rule=None, recipients=(), digest=N
 class _Pending:
     recipient: str
     due: datetime
+    cause: str = "open"
 
 
 @dataclass(slots=True, kw_only=True)
@@ -80,6 +81,8 @@ class _Tracked:
     pending: list[_Pending] = field(default_factory=list)
     digested: bool = False
     last_sent: datetime | None = None
+    attention_since: datetime | None = None
+    sent_at: dict[str, datetime] = field(default_factory=dict)
 
 
 class Policy:
@@ -149,6 +152,47 @@ class Policy:
                 )
         return deliveries
 
+    def activate(self, now: datetime, context: PolicyContext) -> list[Delivery]:
+        """Start attention afresh for tracked episodes, preserving their history."""
+        self._tick(now)
+        self._next_digest = {
+            name: self._occurrence(digest.at, now, after=False)
+            for name, digest in self._config.digests.items()
+        }
+        deliveries: list[Delivery] = []
+        for tracked in self._tracked.values():
+            tracked.attention_since = now
+            tracked.last_sent = None
+            tracked.sent_to.clear()
+            tracked.sent_at.clear()
+            tracked.digested = False
+            tracked.decision = self._decide(tracked.episode, now, now)
+            deliveries.extend(self._announce(tracked, now, cause="activate"))
+        return deliveries
+
+    def explain(self, episode_id: str) -> dict[str, JSONValue]:
+        """Return a detached explanation of the last evaluated attention state."""
+        tracked = self._tracked[episode_id]
+        decision = tracked.decision
+        return {
+            "episode_id": episode_id,
+            "opened_at": time_to_json(tracked.episode.opened_at),
+            "attention_since": time_to_json(
+                tracked.attention_since or tracked.episode.opened_at
+            ),
+            "loudness": decision.loudness.value,
+            "rule_index": (
+                self._config.rules.index(decision.rule)
+                if decision.rule is not None
+                else None
+            ),
+            "recipients": strings_list(decision.recipients),
+            "digest": decision.digest,
+            "sent_to": strings_list(tracked.sent_to),
+            "pending": {p.recipient: time_to_json(p.due) for p in tracked.pending},
+            "last_sent": time_to_json(tracked.last_sent),
+        }
+
     def shelve(self, episode_id: str, until: datetime, now: datetime) -> list[Delivery]:
         """Hold deliveries for one episode until `until`. An operator action."""
         self._tick(now)
@@ -164,9 +208,18 @@ class Policy:
         for tracked in self._tracked.values():
             times.extend(pending.due for pending in tracked.pending)
             rule = tracked.decision.rule
-            if rule is not None and rule.remind_every and tracked.last_sent:
-                times.append(tracked.last_sent + rule.remind_every)
-            times.extend(self._thresholds(tracked.episode))
+            if rule is not None and rule.remind_every:
+                if tracked.decision.loudness is Loudness.DIGEST and tracked.last_sent:
+                    times.append(tracked.last_sent + rule.remind_every)
+                elif tracked.decision.loudness in {Loudness.NOTIFY, Loudness.URGENT}:
+                    waiting = {p.recipient for p in tracked.pending}
+                    times.extend(
+                        sent + rule.remind_every
+                        for recipient, sent in tracked.sent_at.items()
+                        if recipient in tracked.decision.recipients
+                        and recipient not in waiting
+                    )
+            times.extend(self._thresholds(tracked))
         return min((t for t in times if t > now), default=None)
 
     def snapshot(self) -> dict[str, JSONValue]:
@@ -188,7 +241,7 @@ class Policy:
 
     def restore(self, state: Mapping[str, JSONValue], now: datetime) -> None:
         """Restore a snapshot taken by `snapshot`. Decisions are made afresh."""
-        if state.get("schema_version") != SCHEMA_VERSION:
+        if state.get("schema_version") not in {1, SCHEMA_VERSION}:
             raise ValueError(f"cannot restore schema {state.get('schema_version')!r}")
         self._tick(now)
         for name, at in as_object(state["next_digest"]).items():
@@ -201,9 +254,27 @@ class Policy:
         for item in as_list(state["tracked"]):
             data = as_object(item)
             episode = episode_from_json(data["episode"])
+            attention_since = time_from_json(data.get("attention_since"))
             self._tracked[episode.episode_id] = _Tracked(
                 episode=episode,
-                decision=self._decide(episode, now),
+                attention_since=attention_since,
+                sent_at={
+                    name: required_time(at)
+                    for name, at in as_object(
+                        data.get(
+                            "sent_at",
+                            {
+                                str(name): data["last_sent"]
+                                for name in as_list(data["sent_to"])
+                                if data["last_sent"] is not None
+                            },
+                        )
+                    ).items()
+                    if name in self._config.recipients
+                },
+                decision=self._decide(
+                    episode, required_time(state["now"]), attention_since
+                ),
                 sent_to={
                     str(name): None
                     for name in as_list(data["sent_to"])
@@ -213,6 +284,7 @@ class Policy:
                     _Pending(
                         recipient=str(as_object(p)["recipient"]),
                         due=required_time(as_object(p)["due"]),
+                        cause=str(as_object(p).get("cause", "open")),
                     )
                     for p in as_list(data["pending"])
                     if as_object(p)["recipient"] in self._config.recipients
@@ -234,7 +306,9 @@ class Policy:
     def _channels(self, recipient: str) -> tuple[str, ...]:
         return self._config.recipients[recipient].channels
 
-    def _decide(self, episode: Episode, now: datetime) -> _Decision:
+    def _decide(
+        self, episode: Episode, now: datetime, attention_since: datetime | None = None
+    ) -> _Decision:
         """ADR 0020: match each reason, first rule wins; the loudest reason wins."""
         best = _SILENT
         best_index = len(self._config.rules)
@@ -242,7 +316,7 @@ class Policy:
             for index, rule in enumerate(self._config.rules):
                 if not _matches(rule.match, finding, episode, now):
                     continue
-                decision = self._outcome(rule, episode, now)
+                decision = self._outcome(rule, episode, now, attention_since)
                 if decision.loudness > best.loudness or (
                     decision.loudness == best.loudness and index < best_index
                 ):
@@ -250,14 +324,20 @@ class Policy:
                 break
         return best
 
-    def _outcome(self, rule: Rule, episode: Episode, now: datetime) -> _Decision:
+    def _outcome(
+        self,
+        rule: Rule,
+        episode: Episode,
+        now: datetime,
+        attention_since: datetime | None,
+    ) -> _Decision:
         recipients = rule.to
         if not recipients and rule.digest is not None:
             recipients = (self._config.digests[rule.digest].to,)
         loudness = rule.loudness
         if (
             rule.escalate_after is not None
-            and now - episode.opened_at >= rule.escalate_after
+            and now - (attention_since or episode.opened_at) >= rule.escalate_after
         ):
             raised = _LADDER[min(_LADDER.index(loudness) + 1, len(_LADDER) - 1)]
             deliverable = (
@@ -269,7 +349,9 @@ class Policy:
             loudness=loudness, rule=rule, recipients=recipients, digest=rule.digest
         )
 
-    def _announce(self, tracked: _Tracked, now: datetime) -> list[Delivery]:
+    def _announce(
+        self, tracked: _Tracked, now: datetime, *, cause: str = "open"
+    ) -> list[Delivery]:
         """A new episode, or a louder one: this is the noise."""
         decision = tracked.decision
         tracked.pending.clear()
@@ -277,17 +359,18 @@ class Policy:
             tracked.digested = False
             return []
         if decision.loudness is Loudness.URGENT:
-            if tracked.episode.episode_id in self._shelves:
-                until = self._shelves[tracked.episode.episode_id]
+            until = self._shelves.get(tracked.episode.episode_id)
+            if until is not None and until > now:
                 tracked.pending = [
-                    _Pending(recipient=r, due=until) for r in decision.recipients
+                    _Pending(recipient=r, due=until, cause=cause)
+                    for r in decision.recipients
                 ]
                 return []
-            return [self._send(tracked, r, now) for r in decision.recipients]
+            return [self._send(tracked, r, now, cause) for r in decision.recipients]
         if decision.loudness is Loudness.NOTIFY:
             due = now + self._config.batch
             tracked.pending = [
-                _Pending(recipient=r, due=due) for r in decision.recipients
+                _Pending(recipient=r, due=due, cause=cause) for r in decision.recipients
             ]
         return []
 
@@ -296,9 +379,11 @@ class Policy:
     ) -> list[Delivery]:
         """Match again. Louder makes noise; otherwise refresh silently if changed."""
         before = tracked.decision
-        tracked.decision = after = self._decide(tracked.episode, now)
+        tracked.decision = after = self._decide(
+            tracked.episode, now, tracked.attention_since
+        )
         if after.loudness > before.loudness:
-            return self._announce(tracked, now)
+            return self._announce(tracked, now, cause="escalate")
         if after.loudness < before.loudness:
             tracked.pending.clear()
             if after.loudness is Loudness.DIGEST:
@@ -321,6 +406,7 @@ class Policy:
                 loudness=decision.loudness,
                 digest=digest,
                 silent=True,
+                cause="update",
             )
             for recipient in tracked.sent_to
         ]
@@ -344,24 +430,35 @@ class Policy:
                 pending.due = self._occurrence(quiet.end, now, after=True)
                 continue
             tracked.pending.remove(pending)
-            deliveries.append(self._send(tracked, pending.recipient, now))
+            deliveries.append(
+                self._send(tracked, pending.recipient, now, pending.cause)
+            )
         return deliveries
 
     def _remind(self, tracked: _Tracked, now: datetime) -> list[Delivery]:
-        """Rule `remind_every`: say it again while the episode stays open."""
+        """Repeat each recipient's message without bypassing their holds."""
         rule = tracked.decision.rule
-        if (
-            rule is None
-            or rule.remind_every is None
-            or tracked.last_sent is None
-            or now < tracked.last_sent + rule.remind_every
-        ):
+        if rule is None or rule.remind_every is None:
             return []
         if tracked.decision.loudness is Loudness.DIGEST:
-            tracked.digested = False
-            tracked.last_sent = now
+            if (
+                tracked.last_sent is not None
+                and now >= tracked.last_sent + rule.remind_every
+            ):
+                tracked.digested = False
+                tracked.last_sent = now
             return []
-        return [self._send(tracked, r, now) for r in tracked.decision.recipients]
+        if tracked.decision.loudness is Loudness.RECORD:
+            return []
+        waiting = {p.recipient for p in tracked.pending}
+        tracked.pending.extend(
+            _Pending(recipient=recipient, due=now, cause="remind")
+            for recipient in tracked.decision.recipients
+            if recipient not in waiting
+            and recipient in tracked.sent_at
+            and now >= tracked.sent_at[recipient] + rule.remind_every
+        )
+        return self._release(tracked, now)
 
     def _digest(self, name: str, now: datetime) -> list[Delivery]:
         recipient = self._config.digests[name].to
@@ -378,6 +475,7 @@ class Policy:
                 continue
             tracked.digested = True
             tracked.sent_to[recipient] = None
+            tracked.sent_at[recipient] = now
             tracked.last_sent = now
             deliveries.append(
                 Notification(
@@ -386,27 +484,35 @@ class Policy:
                     channels=self._channels(recipient),
                     loudness=Loudness.DIGEST,
                     digest=name,
+                    cause="digest",
                 )
             )
         return deliveries
 
-    def _send(self, tracked: _Tracked, recipient: str, now: datetime) -> Notification:
+    def _send(
+        self, tracked: _Tracked, recipient: str, now: datetime, cause: str
+    ) -> Notification:
         tracked.sent_to[recipient] = None
+        tracked.sent_at[recipient] = now
         tracked.last_sent = now
         return Notification(
             episode_id=tracked.episode.episode_id,
             recipient=recipient,
             channels=self._channels(recipient),
             loudness=tracked.decision.loudness,
+            cause=cause,
         )
 
-    def _thresholds(self, episode: Episode) -> Iterable[datetime]:
+    def _thresholds(self, tracked: _Tracked) -> Iterable[datetime]:
         """Times at which a rule's age or deadline starts to match."""
+        episode = tracked.episode
         for rule in self._config.rules:
             if rule.match.age is not None:
                 yield episode.opened_at + rule.match.age
             if rule.escalate_after is not None:
-                yield episode.opened_at + rule.escalate_after
+                yield (
+                    tracked.attention_since or episode.opened_at
+                ) + rule.escalate_after
             if rule.match.due_within is not None:
                 for finding in episode.reasons:
                     if finding.due_at is not None:
@@ -450,9 +556,11 @@ def _tracked_to_json(tracked: _Tracked) -> JSONObject:
         "episode": episode_to_json(tracked.episode),
         "sent_to": strings_list(tracked.sent_to),
         "pending": [
-            {"recipient": p.recipient, "due": time_to_json(p.due)}
+            {"recipient": p.recipient, "due": time_to_json(p.due), "cause": p.cause}
             for p in tracked.pending
         ],
         "digested": tracked.digested,
         "last_sent": time_to_json(tracked.last_sent),
+        "attention_since": time_to_json(tracked.attention_since),
+        "sent_at": {name: time_to_json(at) for name, at in tracked.sent_at.items()},
     }

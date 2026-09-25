@@ -548,6 +548,7 @@ class Notification:
 
     `silent` replaces an earlier message without alerting again. That happens
     when an update does not raise loudness. `record` is never delivered.
+    `cause` is an open output string for the adapter's presentation.
     """
 
     episode_id: str
@@ -556,6 +557,7 @@ class Notification:
     loudness: Loudness
     digest: str | None = None
     silent: bool = False
+    cause: str = "open"
 
     def __post_init__(self) -> None:
         """Name the digest exactly for digest deliveries. Never deliver `record`."""

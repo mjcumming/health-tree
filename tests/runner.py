@@ -17,7 +17,8 @@ Each step calls, in order and all at the step's `at`:
 6. `engine.ingest_many`, with the step's whole `ingest` list as one batch
 7. `policy.shelve`, when the step shelves an episode
 8. `policy.handle` for every event, in order, as each call returns them
-9. `policy.advance`
+9. `policy.activate`, when the step starts attention afresh
+10. `policy.advance`
 
 The runner tracks open episodes from the events alone, and the current graph
 from the fixture and its register and remove steps. It fills in no durations.
@@ -146,6 +147,10 @@ class PolicyLike(Protocol):
         """Move time forward."""
         ...
 
+    def activate(self, now: datetime, context: PolicyContext) -> list[Delivery]:
+        """Restart attention for existing episodes."""
+        ...
+
     def shelve(self, episode_id: str, until: datetime, now: datetime) -> list[Delivery]:
         """Hold one episode's deliveries."""
         ...
@@ -174,6 +179,7 @@ class Step:
     ingest: tuple[Observation, ...]
     shelve: tuple[str, datetime] | None
     restart: bool
+    activate: bool
     expect: Mapping[str, Any]
 
 
@@ -306,6 +312,7 @@ def _step(data: Mapping[str, Any]) -> Step:
             None if shelve is None else (shelve["episode"], _timestamp(shelve["until"]))
         ),
         restart=data.get("restart", False),
+        activate=data.get("activate", False),
         expect=data["expect"],
     )
 
@@ -468,6 +475,8 @@ class _Run:
             episode_id = self._resolve(reference) or reference
             deliveries.extend(self.policy.shelve(episode_id, until, step.at))
         if self.policy is not None:
+            if step.activate:
+                deliveries.extend(self.policy.activate(step.at, CONTEXT))
             deliveries.extend(self.policy.advance(step.at, CONTEXT))
         problems = self._bind(step.expect, events)
         problems += self._track(events)

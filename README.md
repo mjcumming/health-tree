@@ -93,6 +93,23 @@ The door is only a device, but the `garage` function that depends on it is `high
 - State survives restarts through snapshot and restore.
 - The library can't report the death of the process it runs in, so any deployment needs an external watchdog.
 
+## Attention integration
+
+Use `Policy.handle` for engine events and `advance` for due work. Deliveries carry
+opaque recipients/channels and an output `cause` (`open`, `update`, `remind`,
+`escalate`, `activate`, or `digest`). The adapter renders and transports them.
+`explain(episode_id)` reads the evaluated rule, recipients and pending times without
+advancing time. Snapshot data stays an opaque persistence contract.
+
+Call `activate(now, context)` only when the owner starts attention afresh, such as
+enabling notifications after record-only monitoring. It preserves episode identity
+and age, restarts escalation, and returns or schedules initial requests subject to
+batching, quiet hours and shelves. Reminders begin with each recipient's actual
+request. An adapter can combine activation requests into summaries. Ordinary
+restart uses `restore`, which preserves attention clocks and reads schema 1 or 2;
+new snapshots use schema 2. Scenarios 72 and 73 cover activation and reminder holds.
+Scenario ids 65 to 71 are reserved for the separate acknowledgment design increment.
+
 ## Planned modules
 
 | Part | Module | Owns |
