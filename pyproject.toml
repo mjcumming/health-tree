@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "health-tree"
-version = "0.1.0"
+version = "0.2.0"
 description = "Platform-agnostic health across a dependency graph: checks, dependency-aware episodes, and an attention policy"
 readme = "README.md"
 requires-python = ">=3.14"
