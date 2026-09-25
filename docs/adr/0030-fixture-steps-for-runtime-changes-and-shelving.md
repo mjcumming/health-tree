@@ -1,6 +1,6 @@
 # ADR 0030: Fixture steps for runtime graph changes and shelving
 
-**Status:** Proposed
+**Status:** Accepted
 **Date:** 2026-09-24
 **Deciders:** Michael Cumming
 

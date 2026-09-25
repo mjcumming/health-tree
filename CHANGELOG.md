@@ -7,7 +7,7 @@ All notable changes to this project are documented here. The format follows [Kee
 ### Added
 
 - Public `impact`, `coverage`, and `rollup` queries with immutable result records and adapter-owned views. Query contracts and fixtures cover potential impact, evidence gaps, and counts without duplicate dependents (ADR 0029).
-- Fixture steps that register and remove nodes at runtime and shelve episodes (proposed ADR 0030).
+- Fixture steps that register and remove nodes at runtime and shelve episodes (ADR 0030, accepted).
 - Fixtures for scenarios 7, 21, and 32 and stories 2, 6, 7, and 9. Every story and scenario now has a fixture, except scenarios 12, 26, and 38, which unit tests cover.
 - RFP 0.5 specifies public query contracts and scenarios 57 to 60. Scenario 35 now has a coverage fixture, and the fixture runner supports all five queries.
 - ADRs 0024 to 0026 and scenario fixtures 53 to 56 for atomic and staggered ingestion, partial readiness coverage, and initially unknown command checks.
