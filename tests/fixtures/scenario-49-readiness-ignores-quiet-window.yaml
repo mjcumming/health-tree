@@ -1,0 +1,57 @@
+id: scenario-49-readiness-ignores-quiet-window
+title: Readiness ignores a quiet window over a recorded device
+covers: [scenario-49]
+start: 2026-09-24T06:00:00Z
+settings:
+  settle: 2m
+  rejoin_grace: 1m
+  startup_grace: 0s
+  coalesce_count: 3
+  coalesce_window: 60s
+graph:
+  - id: controller
+    checks:
+      - id: link
+        raise_hold: 0s
+        clear_hold: 30s
+        ttl: 1h
+        unknown_hold: 15m
+  - id: device
+    depends_on: [controller]
+    checks:
+      - id: state
+        raise_hold: 0s
+        clear_hold: 30s
+        ttl: 1h
+        unknown_hold: 15m
+  - id: function
+    kind: function
+    depends_on: [device]
+steps:
+  - at: 2026-09-24T06:00:00Z
+    ingest:
+      - {node: controller, check: link, status: pass, reason: ok}
+      - {node: device, check: state, status: pass, reason: ok}
+    expect:
+      events: []
+      queries:
+        readiness:
+          function: {answer: ready, names: []}
+  - at: 2026-09-24T06:01:00Z
+    ingest:
+      - {node: controller, check: link, status: fail, reason: unreachable}
+      - {node: device, check: state, status: fail, reason: unreachable}
+    expect:
+      bind:
+        controller_ep: {opened: controller}
+      events:
+        - {opened: {anchor: controller, episode: $controller_ep, reasons: [unreachable], recorded: [device]}}
+  - at: 2026-09-24T06:02:00Z
+    quiet: {scope: node, node: device, until: 2026-09-24T07:00:00Z}
+    expect:
+      events: []
+      open:
+        - {episode: $controller_ep, anchor: controller, recorded: [device]}
+      queries:
+        readiness:
+          function: {answer: blocked, names: [controller, device], by: dependency}

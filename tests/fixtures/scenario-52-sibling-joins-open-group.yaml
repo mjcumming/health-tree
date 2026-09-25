@@ -67,12 +67,12 @@ steps:
       bind:
         group_ep: {opened: controller}
       events:
-        - {opened: {anchor: controller, episode: $group_ep}}
+        - {opened: {anchor: controller, episode: $group_ep, form: group, recorded: [d1, d2, d3], absorbed: []}}
   - at: 2026-09-24T07:03:00Z
     ingest:
       - {node: d4, check: cmd, status: fail, reason: command_failed}
     expect:
       events:
-        - {updated: {episode: $group_ep}}
+        - {updated: {episode: $group_ep, recorded: [d1, d2, d3, d4]}}
       open:
         - {episode: $group_ep, anchor: controller}

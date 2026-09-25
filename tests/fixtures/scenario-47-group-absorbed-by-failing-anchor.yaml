@@ -58,7 +58,7 @@ steps:
       bind:
         group_ep: {opened: controller}
       events:
-        - {opened: {anchor: controller, episode: $group_ep}}
+        - {opened: {anchor: controller, episode: $group_ep, form: group, recorded: [d1, d2, d3], absorbed: []}}
   - at: 2026-09-24T05:02:00Z
     ingest:
       - {node: controller, check: link, status: fail, reason: unreachable}
@@ -66,7 +66,7 @@ steps:
       bind:
         controller_ep: {opened: controller}
       events:
-        - {opened: {anchor: controller, episode: $controller_ep, reasons: [unreachable]}}
+        - {opened: {anchor: controller, episode: $controller_ep, reasons: [unreachable], recorded: [d1, d2, d3], absorbed: [$group_ep]}}
         - {resolved: {episode: $group_ep, resolution: absorbed}}
       open:
         - {episode: $controller_ep, anchor: controller, status: fail}

@@ -27,6 +27,10 @@ Each file records one decision: the context, what was decided, the options that 
 | [0021](0021-coalesced-members-decide-recovery.md) | One anchor, one episode; coalesced members decide recovery | Accepted |
 | [0022](0022-settle-gate-waits-only-on-doubt.md) | The settle gate waits only on dependencies in doubt | Accepted |
 | [0023](0023-readiness-reads-own-status.md) | Readiness reads observed status, and stale is not a failure | Accepted |
+| [0024](0024-atomic-observation-batches-and-fixture-steps.md) | Atomic observation batches and fixture steps; supersedes 0012 when accepted | Proposed |
+| [0025](0025-readiness-preserves-unwatched-branches.md) | Readiness preserves unwatched branches; supersedes 0023 when accepted | Proposed |
+| [0026](0026-checks-start-unknown-at-registration.md) | Checks start unknown at registration | Proposed |
+| [0027](0027-public-records-and-the-runner-before-the-engine.md) | Public records, interface stubs, and the fixture runner come before the engine | Proposed |
 
 ## Writing one
 

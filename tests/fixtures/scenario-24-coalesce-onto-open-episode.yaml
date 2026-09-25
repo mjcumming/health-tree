@@ -59,7 +59,7 @@ steps:
       - {node: d3, check: cmd, status: fail, reason: command_failed}
     expect:
       events:
-        - {updated: {episode: $controller_ep}}
+        - {updated: {episode: $controller_ep, recorded: [d1, d2, d3], absorbed: []}}
       open:
         - {episode: $controller_ep, anchor: controller, status: fail}
   - at: 2026-09-24T03:02:00Z

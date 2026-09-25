@@ -6,6 +6,11 @@ All notable changes to this project are documented here. The format follows [Kee
 
 ### Added
 
+- Proposed ADRs 0024 to 0026 and scenario fixtures 53 to 56 for atomic and staggered ingestion, partial readiness coverage, and initially unknown command checks.
+- `health_tree.types`, the public records: fixed types, settings, nodes, checks, observations, episodes, events, quiet windows, query results, policy configuration, and deliveries (proposed ADR 0027).
+- `Engine` and `Policy` with their RFP section 8 signatures. Every method raises `NotImplementedError` until the engine is written.
+- The fixture runner, tested against a scripted engine. Every fixture now runs, and a strict xfail marks each one the engine does not pass yet.
+- A quiet-window fixture step, and a fixture for scenario 49.
 - RFP 0.2, the design of record, in place of 0.1. It adds:
   - the four jobs of the model and the two flows over the cause graph
   - fixed and open types
@@ -27,6 +32,11 @@ All notable changes to this project are documented here. The format follows [Kee
 
 ### Changed
 
+- The README is expanded: the problem, principles, model, a worked example from story 8, design constraints, repository layout, and a documentation map.
+- The README states that a delivery names the episode, recipient, loudness, and channel names, and that the integration carries those channels out.
+- RFP 0.4 defines atomic observation batches, preserves unwatched readiness branches, specifies check initialization, and tightens the real-device evidence required for freshness proofs. ADRs 0024 to 0026 remain proposed; accepted ADRs have not been silently replaced.
+- Scenario 44 now initializes its command check before testing mixed-reason routing. Group fixtures assert recorded members and absorbed ids.
+- README and package documentation now point to RFP 0.4.
 - RFP 0.3 settles the review of 0.2 (RFP section 15):
   - A node is one capability. Maintenance debt gets its own node.
   - Policy rules match each reason of an episode, and the loudest result wins.

@@ -57,6 +57,7 @@ steps:
   - at: 2026-09-24T01:00:00Z
     ingest:
       - {node: lock, check: battery, status: warn, reason: battery_low}
+      - {node: lock, check: command, status: pass, reason: no_command_outstanding}
     expect:
       bind:
         lock_ep: {opened: lock}

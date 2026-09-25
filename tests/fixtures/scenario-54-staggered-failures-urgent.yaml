@@ -1,0 +1,98 @@
+id: scenario-54-staggered-failures-urgent
+title: Urgent child openings already delivered remain in the history after grouping
+covers: [scenario-54]
+start: 2026-09-24T12:00:00Z
+settings:
+  settle: 2m
+  rejoin_grace: 1m
+  startup_grace: 0s
+  coalesce_count: 3
+  coalesce_window: 60s
+policy:
+  batch: 30s
+  recipients:
+    michael:
+      channels: [phone]
+  digests: {}
+  rules:
+    - match: {}
+      loudness: urgent
+      to: michael
+graph:
+  - id: controller
+    checks:
+      - id: link
+        raise_hold: 0s
+        clear_hold: 30s
+        ttl: 1h
+        unknown_hold: 15m
+  - id: d1
+    depends_on: [controller]
+    checks:
+      - id: cmd
+        raise_hold: 0s
+        clear_hold: 30s
+        ttl: 1h
+        unknown_hold: 15m
+  - id: d2
+    depends_on: [controller]
+    checks:
+      - id: cmd
+        raise_hold: 0s
+        clear_hold: 30s
+        ttl: 1h
+        unknown_hold: 15m
+  - id: d3
+    depends_on: [controller]
+    checks:
+      - id: cmd
+        raise_hold: 0s
+        clear_hold: 30s
+        ttl: 1h
+        unknown_hold: 15m
+steps:
+  - at: 2026-09-24T12:00:00Z
+    ingest:
+      - {node: controller, check: link, status: pass, reason: ok}
+      - {node: d1, check: cmd, status: pass, reason: ok}
+      - {node: d2, check: cmd, status: pass, reason: ok}
+      - {node: d3, check: cmd, status: pass, reason: ok}
+    expect:
+      events: []
+      deliveries: []
+  - at: 2026-09-24T12:01:00Z
+    ingest:
+      - {node: d1, check: cmd, status: fail, reason: command_failed}
+    expect:
+      bind:
+        first_child: {opened: d1}
+      events:
+        - {opened: {anchor: d1, episode: $first_child}}
+      deliveries:
+        - {loudness: urgent, episode: $first_child, to: michael}
+  - at: 2026-09-24T12:01:10Z
+    ingest:
+      - {node: d2, check: cmd, status: fail, reason: command_failed}
+    expect:
+      bind:
+        second_child: {opened: d2}
+      events:
+        - {opened: {anchor: d2, episode: $second_child}}
+      deliveries:
+        - {loudness: urgent, episode: $second_child, to: michael}
+  - at: 2026-09-24T12:01:20Z
+    ingest:
+      - {node: d3, check: cmd, status: fail, reason: command_failed}
+    expect:
+      bind:
+        group_ep: {opened: controller}
+      events:
+        - {opened: {anchor: controller, episode: $group_ep, form: group, recorded: [d1, d2, d3], absorbed: [$first_child, $second_child]}}
+        - {resolved: {episode: $first_child, resolution: absorbed}}
+        - {resolved: {episode: $second_child, resolution: absorbed}}
+      deliveries:
+        - {loudness: urgent, episode: $group_ep, to: michael}
+        - {episode: $first_child, to: michael, resolution: absorbed}
+        - {episode: $second_child, to: michael, resolution: absorbed}
+      open:
+        - {anchor: controller, episode: $group_ep}
