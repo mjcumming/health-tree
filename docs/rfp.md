@@ -469,7 +469,7 @@ Each is tagged with its area.
 
 ## 11. Home Assistant integration, later
 
-Not part of this library. Recorded so the boundary stays visible. It is a separate repository.
+Not part of this library. Recorded so the boundary stays visible. It is a separate repository, named `homeostatic`. As of 2026-09-25, the name is free on GitHub (`mjcumming/homeostatic`) and PyPI, with no colliding Home Assistant or HACS project found. `homeostat` was considered and set aside: the name is live at github.com/freol35241/homeostat, an active, unrelated home-automation project.
 
 - Nodes from the Supervisor host, the core, add-ons, config entries, devices, automations, scripts, and declared external hosts and functions.
 - Edges. A wrong edge is worse than a missing one. It mutes a real, independent failure and inflates importance, while a missing edge costs at most an extra message. Discovery proposes, and only relationships that always hold become edges on their own:
@@ -518,7 +518,6 @@ The library is done when:
 ## 13. Open questions
 
 - Presence-based delivery, such as holding a maintenance item until the owner is at that site: version 1 or later.
-- The name of the Home Assistant repository.
 - Redundancy group semantics, before version 2 (ADR 0006).
 - Whether a dependency known to report late should ask for a probe before its dependents open (ADR 0022).
 

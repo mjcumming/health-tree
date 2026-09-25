@@ -35,6 +35,7 @@ All notable changes to this project are documented here. The format follows [Kee
   - `readiness` reads observed status, and a stale dependency answers `unknown`.
   - Observation proofs for detector liveness, battery freshness, and command completion are part of acceptance.
 - The minimum Python version is now 3.14, to match Home Assistant (ADR 0013).
+- The Home Assistant integration repository is named `homeostatic` (RFP section 11), closing an open question from section 13.
 - Ruff format replaces black and isort.
 - Development dependencies moved from an optional extra to a `dev` dependency group.
 
