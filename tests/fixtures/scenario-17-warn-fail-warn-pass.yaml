@@ -1,0 +1,47 @@
+id: scenario-17-warn-fail-warn-pass
+title: Warn opens, fail and warn update, and a held pass resolves
+covers: [scenario-17]
+start: 2026-09-24T19:00:00Z
+settings:
+  settle: 2m
+  rejoin_grace: 1m
+  startup_grace: 0s
+  coalesce_count: 3
+  coalesce_window: 60s
+graph:
+  - id: disk
+    checks:
+      - {id: capacity, raise_hold: 0s, clear_hold: 30s, ttl: 1h, unknown_hold: 15m}
+steps:
+  - at: 2026-09-24T19:00:00Z
+    ingest:
+      - {node: disk, check: capacity, status: warn, reason: capacity_low}
+    expect:
+      bind:
+        disk_ep: {opened: disk}
+      events:
+        - {opened: {anchor: disk, episode: $disk_ep, status: warn}}
+  - at: 2026-09-24T19:01:00Z
+    ingest:
+      - {node: disk, check: capacity, status: fail, reason: full}
+    expect:
+      events:
+        - {updated: {episode: $disk_ep, status: fail, reasons: [full]}}
+  - at: 2026-09-24T19:02:00Z
+    ingest:
+      - {node: disk, check: capacity, status: warn, reason: capacity_low}
+    expect:
+      events:
+        - {updated: {episode: $disk_ep, status: warn, reasons: [capacity_low]}}
+  - at: 2026-09-24T19:03:00Z
+    ingest:
+      - {node: disk, check: capacity, status: pass, reason: ok}
+    expect:
+      events: []
+      open:
+        - {episode: $disk_ep, anchor: disk, status: warn}
+  - at: 2026-09-24T19:03:30Z
+    expect:
+      events:
+        - {resolved: {episode: $disk_ep, resolution: cleared}}
+      open: []

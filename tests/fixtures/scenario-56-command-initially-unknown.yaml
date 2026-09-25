@@ -1,0 +1,63 @@
+id: scenario-56-command-initially-unknown
+title: A null ttl does not excuse a command check that never reported
+covers: [scenario-56]
+start: 2026-09-24T14:00:00Z
+settings:
+  settle: 2m
+  rejoin_grace: 1m
+  startup_grace: 0s
+  coalesce_count: 3
+  coalesce_window: 60s
+graph:
+  - id: unobserved
+    checks:
+      - id: command
+        raise_hold: 0s
+        clear_hold: 30s
+        ttl: null
+        unknown_hold: 15m
+  - id: initialized
+    checks:
+      - id: command
+        raise_hold: 0s
+        clear_hold: 30s
+        ttl: null
+        unknown_hold: 15m
+steps:
+  - at: 2026-09-24T14:00:00Z
+    ingest:
+      - {node: initialized, check: command, status: pass, reason: no_command_outstanding}
+    expect:
+      events: []
+      queries:
+        readiness:
+          unobserved: {answer: unknown, names: [unobserved]}
+          initialized: {answer: ready, names: []}
+  - at: 2026-09-24T14:15:01Z
+    expect:
+      bind:
+        stale_ep: {opened: unobserved}
+      events:
+        - {opened: {anchor: unobserved, episode: $stale_ep, status: unknown, reasons: [stale]}}
+      open:
+        - {anchor: unobserved, episode: $stale_ep}
+  - at: 2026-09-24T14:16:00Z
+    ingest:
+      - {node: unobserved, check: command, status: pass, reason: no_command_outstanding}
+    expect:
+      events: []
+      open:
+        - {anchor: unobserved, episode: $stale_ep, status: unknown}
+  - at: 2026-09-24T14:16:31Z
+    expect:
+      events:
+        - {resolved: {episode: $stale_ep, resolution: cleared}}
+      open: []
+      queries:
+        readiness:
+          unobserved: {answer: ready, names: []}
+          initialized: {answer: ready, names: []}
+  - at: 2026-09-25T14:00:00Z
+    expect:
+      events: []
+      open: []

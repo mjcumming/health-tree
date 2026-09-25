@@ -1,0 +1,37 @@
+id: scenario-11-startup-grace-covers-a-wave
+title: Startup grace holds a wave of failures, and only what still fails opens after it
+covers: [scenario-11]
+start: 2026-09-24T15:00:00Z
+settings:
+  settle: 2m
+  rejoin_grace: 1m
+  startup_grace: 2m
+  coalesce_count: 3
+  coalesce_window: 60s
+graph:
+  - id: a
+    checks:
+      - {id: link, raise_hold: 0s, clear_hold: 30s, ttl: 1h, unknown_hold: 15m}
+  - id: b
+    checks:
+      - {id: link, raise_hold: 0s, clear_hold: 30s, ttl: 1h, unknown_hold: 15m}
+steps:
+  - at: 2026-09-24T15:00:00Z
+    ingest:
+      - {node: a, check: link, status: fail, reason: unreachable}
+      - {node: b, check: link, status: fail, reason: unreachable}
+    expect:
+      events: []
+  - at: 2026-09-24T15:01:00Z
+    ingest:
+      - {node: b, check: link, status: pass, reason: reachable}
+    expect:
+      events: []
+  - at: 2026-09-24T15:02:00Z
+    expect:
+      bind:
+        a_ep: {opened: a}
+      events:
+        - {opened: {anchor: a, episode: $a_ep}}
+      open:
+        - {episode: $a_ep, anchor: a}

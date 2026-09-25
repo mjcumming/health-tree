@@ -1,0 +1,29 @@
+id: scenario-42-readiness-looks-through-to-a-sensor
+title: Readiness looks through nodes with no checks to an unknown sensor
+covers: [scenario-42]
+start: 2026-09-24T10:00:00Z
+settings:
+  settle: 2m
+  rejoin_grace: 1m
+  startup_grace: 0s
+  coalesce_count: 3
+  coalesce_window: 60s
+graph:
+  - id: sensor
+    checks:
+      - {id: fresh, raise_hold: 0s, clear_hold: 30s, ttl: 15m, unknown_hold: 15m}
+  - id: mid
+    depends_on: [sensor]
+  - id: fn
+    kind: function
+    depends_on: [mid]
+steps:
+  - at: 2026-09-24T10:00:00Z
+    expect:
+      events: []
+      queries:
+        readiness:
+          fn: {answer: unknown, names: [sensor]}
+        explain:
+          fn:
+            names: [sensor]

@@ -1,7 +1,7 @@
-id: scenario-45-group-dissolves-below-count
-title: A group that falls below coalesce_count resolves, and the rest stand alone
-covers: [scenario-45]
-start: 2026-09-24T04:00:00Z
+id: scenario-53-atomic-observation-batch
+title: An atomic batch coalesces without intermediate child episodes in either order
+covers: [scenario-53]
+start: 2026-09-24T12:00:00Z
 settings:
   settle: 2m
   rejoin_grace: 1m
@@ -14,7 +14,7 @@ graph:
       - id: link
         raise_hold: 0s
         clear_hold: 30s
-        ttl: 10m
+        ttl: 1h
         unknown_hold: 15m
   - id: d1
     depends_on: [controller]
@@ -22,7 +22,7 @@ graph:
       - id: cmd
         raise_hold: 0s
         clear_hold: 30s
-        ttl: 10m
+        ttl: 1h
         unknown_hold: 15m
   - id: d2
     depends_on: [controller]
@@ -30,7 +30,7 @@ graph:
       - id: cmd
         raise_hold: 0s
         clear_hold: 30s
-        ttl: 10m
+        ttl: 1h
         unknown_hold: 15m
   - id: d3
     depends_on: [controller]
@@ -38,10 +38,10 @@ graph:
       - id: cmd
         raise_hold: 0s
         clear_hold: 30s
-        ttl: 10m
+        ttl: 1h
         unknown_hold: 15m
 steps:
-  - at: 2026-09-24T04:00:00Z
+  - at: 2026-09-24T12:00:00Z
     ingest:
       - {node: controller, check: link, status: pass, reason: ok}
       - {node: d1, check: cmd, status: pass, reason: ok}
@@ -49,34 +49,39 @@ steps:
       - {node: d3, check: cmd, status: pass, reason: ok}
     expect:
       events: []
-  - at: 2026-09-24T04:01:00Z
+  - at: 2026-09-24T12:01:00Z
     ingest:
       - {node: d1, check: cmd, status: fail, reason: command_failed}
       - {node: d2, check: cmd, status: fail, reason: command_failed}
       - {node: d3, check: cmd, status: fail, reason: command_failed}
     expect:
       bind:
-        group_ep: {opened: controller}
+        first_group: {opened: controller}
       events:
-        - {opened: {anchor: controller, episode: $group_ep, form: group, recorded: [d1, d2, d3], absorbed: []}}
-  - at: 2026-09-24T04:02:00Z
+        - {opened: {anchor: controller, episode: $first_group, form: group, status: fail, recorded: [d1, d2, d3], absorbed: []}}
+      open:
+        - {anchor: controller, episode: $first_group, recorded: [d1, d2, d3]}
+  - at: 2026-09-24T12:02:00Z
     ingest:
       - {node: d1, check: cmd, status: pass, reason: ok}
+      - {node: d2, check: cmd, status: pass, reason: ok}
+      - {node: d3, check: cmd, status: pass, reason: ok}
     expect:
       events: []
-  - at: 2026-09-24T04:02:31Z
+  - at: 2026-09-24T12:02:31Z
     expect:
       events:
-        - {resolved: {episode: $group_ep, resolution: cleared}}
+        - {resolved: {episode: $first_group, resolution: cleared}}
       open: []
-  - at: 2026-09-24T04:03:32Z
+  - at: 2026-09-24T12:04:00Z
+    ingest:
+      - {node: d3, check: cmd, status: fail, reason: command_failed}
+      - {node: d2, check: cmd, status: fail, reason: command_failed}
+      - {node: d1, check: cmd, status: fail, reason: command_failed}
     expect:
       bind:
-        d2_ep: {opened: d2}
-        d3_ep: {opened: d3}
+        second_group: {opened: controller}
       events:
-        - {opened: {anchor: d2, episode: $d2_ep, reasons: [command_failed]}}
-        - {opened: {anchor: d3, episode: $d3_ep, reasons: [command_failed]}}
+        - {opened: {anchor: controller, episode: $second_group, form: group, status: fail, recorded: [d1, d2, d3], absorbed: []}}
       open:
-        - {episode: $d2_ep, anchor: d2}
-        - {episode: $d3_ep, anchor: d3}
+        - {anchor: controller, episode: $second_group, recorded: [d1, d2, d3]}

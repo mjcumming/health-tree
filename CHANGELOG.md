@@ -6,6 +6,16 @@ All notable changes to this project are documented here. The format follows [Kee
 
 ### Added
 
+- ADRs 0024 to 0026 and scenario fixtures 53 to 56 for atomic and staggered ingestion, partial readiness coverage, and initially unknown command checks.
+- `health_tree.types`, the public records: fixed types, settings, nodes, checks, observations, episodes, events, quiet windows, query results, policy configuration, and deliveries (ADR 0027).
+- `Engine` and `Policy` with their RFP section 8 signatures. Every method raises `NotImplementedError` until the engine is written.
+- The fixture runner, tested against a scripted engine. Every fixture now runs, and a strict xfail marks each one the engine does not pass yet.
+- A quiet-window fixture step, and a fixture for scenario 49.
+- The engine. It covers check holds, `ttl`, and staleness; inhibition and the settle gate with probes; coalescing, joining, and dissolving groups; absorption; quiet windows and startup and rejoin grace; UUIDv7 episode ids; `explain` and `readiness`; `next_deadline`; and JSON snapshots with restore.
+- The attention policy. It covers per-reason matching where the loudest wins, batching, quiet hours in the policy's time zone, digests, silent updates and resolution notices, age and deadline thresholds, reminders, escalation, shelving, and snapshots.
+- Fixtures for scenarios 1 to 6, 8 to 11, 13, 15 to 17, 20, 22, 23, 25, 28 to 31, 34, 37, and 40 to 42, also covering stories 1, 3, and 5. Every fixture passes, and `PENDING` is empty.
+- Unit tests for the engine and policy API, and Hypothesis properties: a consistent event history, one root episode per anchor, no opening under a failed dependency, none inside a quiet window, full recovery, snapshot and restore, and batch order.
+- ADR 0028, accepted: the engine and policy semantics the RFP left open.
 - RFP 0.2, the design of record, in place of 0.1. It adds:
   - the four jobs of the model and the two flows over the cause graph
   - fixed and open types
@@ -27,6 +37,14 @@ All notable changes to this project are documented here. The format follows [Kee
 
 ### Changed
 
+- ADRs 0016 and 0024 to 0028 are accepted. ADR 0012 is superseded by 0024, and ADR 0023 by 0025.
+- Rule 15: when an anchor recovers while nodes it muted still fail, its episode holds them through rejoin grace instead of sending an all-clear. They then become members, or each opens its own episode (scenario 4).
+- Readiness names causes only. Hardware behind a failed dependency is not named, and `explain` shows the chain (scenarios 34 and 49).
+- The README is expanded: the problem, principles, model, a worked example from story 8, design constraints, repository layout, and a documentation map.
+- The README states that a delivery names the episode, recipient, loudness, and channel names, and that the integration carries those channels out.
+- RFP 0.4 defines atomic observation batches, preserves unwatched readiness branches, specifies check initialization, and tightens the real-device evidence required for freshness proofs. ADRs 0024 to 0026 cover them.
+- Scenario 44 now initializes its command check before testing mixed-reason routing. Group fixtures assert recorded members and absorbed ids.
+- README and package documentation now point to RFP 0.4.
 - RFP 0.3 settles the review of 0.2 (RFP section 15):
   - A node is one capability. Maintenance debt gets its own node.
   - Policy rules match each reason of an episode, and the loudest result wins.

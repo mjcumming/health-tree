@@ -1,0 +1,104 @@
+id: scenario-28-quiet-hours-and-urgency
+title: A normal failure waits for the morning; a high one pages at once
+covers: [scenario-28, story-1, story-3]
+start: 2026-09-24T02:30:00Z
+settings:
+  settle: 2m
+  rejoin_grace: 1m
+  startup_grace: 0s
+  coalesce_count: 3
+  coalesce_window: 60s
+policy:
+  batch: 30s
+  recipients:
+    michael:
+      channels: [phone]
+      quiet_hours: "22:30-07:00"
+  digests:
+    morning:
+      at: "08:00"
+      to: michael
+  rules:
+    - match: {category: operation, importance: [high, critical]}
+      loudness: urgent
+      to: michael
+    - match: {status: warn, due_within: 24h}
+      loudness: notify
+      to: michael
+    - match: {category: maintenance}
+      loudness: digest
+      digest: morning
+      remind_every: 7d
+      escalate_after: 30d
+    - match: {status: [fail, unknown], importance: [high, critical]}
+      loudness: urgent
+      to: michael
+    - match: {status: fail}
+      loudness: notify
+      to: michael
+    - match: {}
+      loudness: digest
+      digest: morning
+graph:
+  - id: frigate_host
+    checks:
+      - {id: ping, raise_hold: 0s, clear_hold: 30s, ttl: 1d, unknown_hold: 1h}
+  - id: person_sensor
+    depends_on: [frigate_host]
+    checks:
+      - {id: avail, raise_hold: 0s, clear_hold: 30s, ttl: 1d, unknown_hold: 1h}
+  - id: motion_lighting
+    kind: function
+    importance: high
+    depends_on: [person_sensor]
+  - id: spotify
+    checks:
+      - {id: auth, raise_hold: 0s, clear_hold: 30s, ttl: 1d, unknown_hold: 1h, labels: {actionable_by: human}, annotations: {remedy: Sign in again}}
+  - id: backyard_music
+    kind: function
+    depends_on: [spotify]
+steps:
+  - at: 2026-09-24T02:30:00Z
+    ingest:
+      - {node: frigate_host, check: ping, status: pass, reason: reachable}
+      - {node: person_sensor, check: avail, status: pass, reason: ok}
+      - {node: spotify, check: auth, status: pass, reason: ok}
+    expect:
+      events: []
+      deliveries: []
+  - at: 2026-09-24T02:40:00Z
+    ingest:
+      - {node: frigate_host, check: ping, status: fail, reason: unreachable}
+      - {node: person_sensor, check: avail, status: fail, reason: unavailable}
+    expect:
+      bind:
+        frigate_ep: {opened: frigate_host}
+      events:
+        - {opened: {anchor: frigate_host, episode: $frigate_ep, importance: high, recorded: [person_sensor]}}
+      deliveries:
+        - {loudness: urgent, episode: $frigate_ep, to: michael}
+  - at: 2026-09-24T03:10:00Z
+    ingest:
+      - {node: spotify, check: auth, status: fail, reason: auth_required}
+    expect:
+      bind:
+        spotify_ep: {opened: spotify}
+      events:
+        - {opened: {anchor: spotify, episode: $spotify_ep, importance: normal}}
+      deliveries: []
+  - at: 2026-09-24T03:10:30Z
+    expect:
+      events: []
+      deliveries: []
+  - at: 2026-09-24T07:00:00Z
+    expect:
+      events: []
+      deliveries:
+        - {loudness: notify, episode: $spotify_ep, to: michael}
+  - at: 2026-09-24T18:00:00Z
+    expect:
+      events: []
+      deliveries: []
+      queries:
+        readiness:
+          backyard_music: {answer: blocked, names: [spotify], by: dependency}

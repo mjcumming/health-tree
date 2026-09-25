@@ -50,7 +50,7 @@ These follow Home Assistant core.
 
 ## Tests
 
-- Stories and scenarios are YAML fixtures under `tests/fixtures/`, run by one runner (ADR 0012).
+- Stories and scenarios are YAML fixtures under `tests/fixtures/`, run by one runner (ADRs 0024 and 0027).
 - Annotate the types of test parameters.
 - Merge near-duplicate tests with `pytest.mark.parametrize` and `pytest.param(..., id=...)`.
 - No branching inside tests.

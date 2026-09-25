@@ -1,0 +1,34 @@
+id: scenario-13-flap-inside-raise-hold
+title: A failure that clears inside its raise hold opens nothing
+covers: [scenario-13]
+start: 2026-09-24T16:00:00Z
+settings:
+  settle: 2m
+  rejoin_grace: 1m
+  startup_grace: 0s
+  coalesce_count: 3
+  coalesce_window: 60s
+graph:
+  - id: device
+    checks:
+      - {id: state, raise_hold: 1m, clear_hold: 30s, ttl: 1h, unknown_hold: 15m}
+steps:
+  - at: 2026-09-24T16:00:00Z
+    ingest:
+      - {node: device, check: state, status: pass, reason: ok}
+    expect:
+      events: []
+  - at: 2026-09-24T16:00:10Z
+    ingest:
+      - {node: device, check: state, status: fail, reason: fault}
+    expect:
+      events: []
+  - at: 2026-09-24T16:00:40Z
+    ingest:
+      - {node: device, check: state, status: pass, reason: ok}
+    expect:
+      events: []
+  - at: 2026-09-24T16:01:20Z
+    expect:
+      events: []
+      open: []

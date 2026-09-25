@@ -1,0 +1,41 @@
+id: scenario-22-two-roots-record-one-device
+title: A device under two failed roots is recorded on both episodes
+covers: [scenario-22]
+start: 2026-09-24T19:00:00Z
+settings:
+  settle: 2m
+  rejoin_grace: 1m
+  startup_grace: 0s
+  coalesce_count: 3
+  coalesce_window: 60s
+graph:
+  - id: root_a
+    checks:
+      - {id: link, raise_hold: 0s, clear_hold: 30s, ttl: 1h, unknown_hold: 15m}
+  - id: root_b
+    checks:
+      - {id: link, raise_hold: 0s, clear_hold: 30s, ttl: 1h, unknown_hold: 15m}
+  - id: device
+    depends_on: [root_a, root_b]
+    checks:
+      - {id: state, raise_hold: 0s, clear_hold: 30s, ttl: 1h, unknown_hold: 15m}
+steps:
+  - at: 2026-09-24T19:00:00Z
+    ingest:
+      - {node: root_a, check: link, status: pass, reason: ok}
+      - {node: root_b, check: link, status: pass, reason: ok}
+      - {node: device, check: state, status: pass, reason: ok}
+    expect:
+      events: []
+  - at: 2026-09-24T19:01:00Z
+    ingest:
+      - {node: root_a, check: link, status: fail, reason: unreachable}
+      - {node: root_b, check: link, status: fail, reason: unreachable}
+      - {node: device, check: state, status: fail, reason: unavailable}
+    expect:
+      bind:
+        a_ep: {opened: root_a}
+        b_ep: {opened: root_b}
+      events:
+        - {opened: {anchor: root_a, episode: $a_ep, recorded: [device]}}
+        - {opened: {anchor: root_b, episode: $b_ep, recorded: [device]}}

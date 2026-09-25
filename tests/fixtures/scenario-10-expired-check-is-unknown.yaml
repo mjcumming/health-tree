@@ -1,0 +1,33 @@
+id: scenario-10-expired-check-is-unknown
+title: A check past its ttl is unknown, and a passing sibling does not hide it
+covers: [scenario-10]
+start: 2026-09-24T14:00:00Z
+settings:
+  settle: 2m
+  rejoin_grace: 1m
+  startup_grace: 0s
+  coalesce_count: 3
+  coalesce_window: 60s
+graph:
+  - id: device
+    checks:
+      - {id: fast, raise_hold: 0s, clear_hold: 30s, ttl: 5m, unknown_hold: 30m}
+      - {id: slow, raise_hold: 0s, clear_hold: 30s, ttl: 1h, unknown_hold: 30m}
+  - id: function
+    depends_on: [device]
+steps:
+  - at: 2026-09-24T14:00:00Z
+    ingest:
+      - {node: device, check: fast, status: pass, reason: fresh}
+      - {node: device, check: slow, status: pass, reason: fresh}
+    expect:
+      events: []
+      queries:
+        readiness:
+          function: {answer: ready, names: []}
+  - at: 2026-09-24T14:05:00Z
+    expect:
+      events: []
+      queries:
+        readiness:
+          function: {answer: unknown, names: [device]}

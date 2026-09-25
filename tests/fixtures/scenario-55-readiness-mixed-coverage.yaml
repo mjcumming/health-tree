@@ -1,0 +1,62 @@
+id: scenario-55-readiness-mixed-coverage
+title: Readiness preserves unwatched branches beside healthy observations
+covers: [scenario-55]
+start: 2026-09-24T13:00:00Z
+settings:
+  settle: 2m
+  rejoin_grace: 1m
+  startup_grace: 0s
+  coalesce_count: 3
+  coalesce_window: 60s
+graph:
+  - id: service
+    checks:
+      - id: probe
+        raise_hold: 0s
+        clear_hold: 30s
+        ttl: 1h
+        unknown_hold: 15m
+  - id: controller
+  - id: unwatched_path
+    depends_on: [controller]
+  - id: watched_path
+    depends_on: [service]
+  - id: evidence_only
+    checks:
+      - id: info
+        affects_own: false
+        raise_hold: 0s
+        clear_hold: 30s
+        ttl: 1h
+        unknown_hold: 15m
+  - id: fn_mixed
+    depends_on: [service, controller]
+  - id: fn_indirect
+    depends_on: [service, unwatched_path]
+  - id: fn_checked
+    depends_on: [controller]
+    checks:
+      - id: selftest
+        raise_hold: 0s
+        clear_hold: 30s
+        ttl: 1h
+        unknown_hold: 15m
+  - id: fn_evidence
+    depends_on: [service, evidence_only]
+  - id: fn_watched
+    depends_on: [watched_path]
+steps:
+  - at: 2026-09-24T13:00:00Z
+    ingest:
+      - {node: service, check: probe, status: pass, reason: answered}
+      - {node: fn_checked, check: selftest, status: pass, reason: ok}
+      - {node: evidence_only, check: info, status: pass, reason: info_available}
+    expect:
+      events: []
+      queries:
+        readiness:
+          fn_mixed: {answer: unknown, names: [controller]}
+          fn_indirect: {answer: unknown, names: [controller]}
+          fn_checked: {answer: unknown, names: [controller]}
+          fn_evidence: {answer: unknown, names: [evidence_only]}
+          fn_watched: {answer: ready, names: []}

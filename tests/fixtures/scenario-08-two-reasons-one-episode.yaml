@@ -1,0 +1,25 @@
+id: scenario-08-two-reasons-one-episode
+title: Two failing checks on one node are one episode with both reasons
+covers: [scenario-8]
+start: 2026-09-24T13:00:00Z
+settings:
+  settle: 2m
+  rejoin_grace: 1m
+  startup_grace: 0s
+  coalesce_count: 3
+  coalesce_window: 60s
+graph:
+  - id: device
+    checks:
+      - {id: battery, raise_hold: 0s, clear_hold: 30s, ttl: 1d, unknown_hold: 1h}
+      - {id: state, raise_hold: 0s, clear_hold: 30s, ttl: 1h, unknown_hold: 15m}
+steps:
+  - at: 2026-09-24T13:00:00Z
+    ingest:
+      - {node: device, check: battery, status: warn, reason: battery_low}
+      - {node: device, check: state, status: fail, reason: fault}
+    expect:
+      bind:
+        device_ep: {opened: device}
+      events:
+        - {opened: {anchor: device, episode: $device_ep, status: fail, reasons: [battery_low, fault]}}

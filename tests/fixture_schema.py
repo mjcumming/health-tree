@@ -1,10 +1,10 @@
-"""Validate health-tree YAML fixtures against ADR 0012.
+"""Validate health-tree YAML fixtures against the RFP 0.4 draft and ADR 0024.
 
-The engine does not exist yet. This module checks the files that will drive it.
+It checks structure only. `tests/runner.py` runs the fixtures against the engine.
 """
 
 from collections.abc import Set as AbstractSet
-from datetime import datetime
+from datetime import datetime, timedelta
 from pathlib import Path
 import re
 from typing import Any
@@ -30,16 +30,38 @@ _IMPORTANCE = frozenset({"low", "normal", "high", "critical"})
 _STATUS = frozenset({"pass", "unknown", "warn", "fail"})
 _LOUDNESS = frozenset({"record", "digest", "notify", "urgent"})
 _RESOLUTION = frozenset({"cleared", "removed", "absorbed"})
+_QUIET_SCOPES = frozenset({"all", "node", "node_and_dependents"})
 _MATCH_KEYS = frozenset(
     {"status", "importance", "reason", "category", "labels", "age", "due_within"}
 )
 _EVENT_KINDS = frozenset({"probe", "opened", "updated", "resolved"})
+_EPISODE_FIELDS = frozenset(
+    {
+        "anchor",
+        "episode",
+        "form",
+        "status",
+        "importance",
+        "reasons",
+        "recorded",
+        "absorbed",
+    }
+)
 _READINESS = frozenset({"ready", "degraded", "blocked", "unknown"})
 _BLOCKED_BY = frozenset({"own", "dependency"})
 
 
 class FixtureSchemaError(ValueError):
-    """A fixture does not match the ADR 0012 schema."""
+    """A fixture does not match the current design's schema."""
+
+
+def parse_duration(value: str) -> timedelta:
+    """Parse a fixture duration such as `90s`, `15m`, or `1d2h`."""
+    match = _DURATION.fullmatch(value)
+    if not value or match is None:
+        raise FixtureSchemaError(f"{value!r} is not a duration")
+    days, hours, minutes, seconds = (int(part or 0) for part in match.groups())
+    return timedelta(days=days, hours=hours, minutes=minutes, seconds=seconds)
 
 
 def validate_directory(path: Path = FIXTURES) -> None:
@@ -410,7 +432,9 @@ def _steps(
         if not isinstance(step, dict):
             problems.append(f"{path} must be a mapping")
             continue
-        _reject_unknown(step, {"at", "ingest", "restart", "expect"}, path, problems)
+        _reject_unknown(
+            step, {"at", "quiet", "ingest", "restart", "expect"}, path, problems
+        )
         at = _datetime(step.get("at"), f"{path}.at", problems)
         if at is not None and start is not None and at < start:
             problems.append(f"{path}.at must not be before start")
@@ -418,8 +442,10 @@ def _steps(
             problems.append(f"{path}.at must be after the previous step")
         if at is not None:
             previous_step = at
-        if "ingest" in step and step.get("restart") is True:
-            problems.append(f"{path} cannot both ingest and restart")
+        if step.get("restart") is True and ("ingest" in step or "quiet" in step):
+            problems.append(f"{path} cannot restart and also quiet or ingest")
+        if "quiet" in step:
+            _quiet_window(step["quiet"], nodes, at, f"{path}.quiet", problems)
         if "ingest" in step:
             _ingest(step["ingest"], nodes, path, problems)
         if "restart" in step and step["restart"] is not True:
@@ -431,6 +457,29 @@ def _steps(
         _expect(expect, path, nodes, bound, has_policy, problems)
 
 
+def _quiet_window(
+    value: object,
+    nodes: dict[str, set[str]],
+    at: datetime | None,
+    where: str,
+    problems: list[str],
+) -> None:
+    if not isinstance(value, dict):
+        problems.append(f"{where} must be a mapping")
+        return
+    _reject_unknown(value, {"scope", "node", "until"}, where, problems)
+    scope = value.get("scope")
+    if scope not in _QUIET_SCOPES:
+        problems.append(f"{where}.scope must be all, node, or node_and_dependents")
+    elif scope == "all" and "node" in value:
+        problems.append(f"{where}.node is not allowed when scope is all")
+    elif scope != "all" and value.get("node") not in nodes:
+        problems.append(f"{where}.node must name a node")
+    until = _datetime(value.get("until"), f"{where}.until", problems)
+    if until is not None and at is not None and until <= at:
+        problems.append(f"{where}.until must be after the step")
+
+
 def _ingest(
     value: object,
     nodes: dict[str, set[str]],
@@ -440,6 +489,7 @@ def _ingest(
     if not isinstance(value, list) or not value:
         problems.append(f"{where}.ingest must be a non-empty list")
         return
+    seen: set[tuple[str, str]] = set()
     for index, item in enumerate(value):
         path = f"{where}.ingest[{index}]"
         if not isinstance(item, dict):
@@ -454,11 +504,17 @@ def _ingest(
         node = item.get("node")
         check = item.get("check")
         if (
-            node not in nodes
+            not isinstance(node, str)
+            or node not in nodes
             or not isinstance(check, str)
-            or check not in nodes.get(str(node), set())
+            or check not in nodes[node]
         ):
             problems.append(f"{path} does not name a registered check")
+        else:
+            key = (node, check)
+            if key in seen:
+                problems.append(f"{path}: duplicate check observation {node}.{check}")
+            seen.add(key)
         if item.get("status") not in _STATUS:
             problems.append(f"{path}.status is not a status")
         _string(item.get("reason"), f"{path}.reason", problems)
@@ -569,21 +625,12 @@ def _event_body(
     problems: list[str],
 ) -> None:
     if kind == "opened":
-        _reject_unknown(
-            body, {"anchor", "episode", "importance", "reasons"}, where, problems
-        )
+        _reject_unknown(body, _EPISODE_FIELDS, where, problems)
         if body.get("anchor") not in nodes:
             problems.append(f"{where}.anchor is not a node")
         if "episode" in body:
             _ref(body["episode"], bound, f"{where}.episode", problems)
-        if "importance" in body and body["importance"] not in _IMPORTANCE:
-            problems.append(f"{where}.importance is not an importance")
-        reasons = body.get("reasons")
-        if "reasons" in body and (
-            not isinstance(reasons, list)
-            or not all(isinstance(r, str) for r in reasons)
-        ):
-            problems.append(f"{where}.reasons must be a list of strings")
+        _episode_details(body, nodes, bound, where, problems)
         return
     episode = body.get("episode")
     _ref(episode, bound, f"{where}.episode", problems)
@@ -592,7 +639,44 @@ def _event_body(
             problems.append(f"{where}.resolution is not a resolution")
         _reject_unknown(body, {"episode", "resolution"}, where, problems)
     else:
-        _reject_unknown(body, {"episode", "anchor"}, where, problems)
+        _reject_unknown(body, _EPISODE_FIELDS, where, problems)
+        if "anchor" in body and body["anchor"] not in nodes:
+            problems.append(f"{where}.anchor is not a node")
+        _episode_details(body, nodes, bound, where, problems)
+
+
+def _episode_details(
+    body: dict[str, Any],
+    nodes: dict[str, set[str]],
+    bound: set[str],
+    where: str,
+    problems: list[str],
+) -> None:
+    if "form" in body and body["form"] not in {"root", "group"}:
+        problems.append(f"{where}.form is not an episode form")
+    if "status" in body and body["status"] not in _STATUS:
+        problems.append(f"{where}.status is not a status")
+    if "importance" in body and body["importance"] not in _IMPORTANCE:
+        problems.append(f"{where}.importance is not an importance")
+    if "reasons" in body:
+        reasons = body["reasons"]
+        if not isinstance(reasons, list) or not all(
+            isinstance(reason, str) for reason in reasons
+        ):
+            problems.append(f"{where}.reasons must be a list of strings")
+    if "recorded" in body:
+        recorded = body["recorded"]
+        if not isinstance(recorded, list) or not all(
+            isinstance(node, str) and node in nodes for node in recorded
+        ):
+            problems.append(f"{where}.recorded must be registered node ids")
+    if "absorbed" in body:
+        absorbed = body["absorbed"]
+        if not isinstance(absorbed, list):
+            problems.append(f"{where}.absorbed must be a list of episode references")
+        else:
+            for episode in absorbed:
+                _ref(episode, bound, f"{where}.absorbed", problems)
 
 
 def _deliveries(
@@ -610,9 +694,20 @@ def _deliveries(
             problems.append(f"{path} must be a mapping")
             continue
         _reject_unknown(
-            delivery, {"loudness", "digest", "episode", "to"}, path, problems
+            delivery,
+            {"loudness", "digest", "episode", "to", "resolution"},
+            path,
+            problems,
         )
-        if delivery.get("loudness") not in _LOUDNESS:
+        if "resolution" in delivery:
+            if delivery["resolution"] not in _RESOLUTION:
+                problems.append(f"{path}.resolution is not a resolution")
+            if "loudness" in delivery or "digest" in delivery:
+                problems.append(
+                    f"{path}: a resolution delivery has no loudness or digest"
+                )
+            _string(delivery.get("to"), f"{path}.to", problems)
+        elif delivery.get("loudness") not in _LOUDNESS:
             problems.append(f"{path}.loudness is not a loudness")
         _ref(delivery.get("episode"), bound, f"{path}.episode", problems)
 
@@ -632,12 +727,11 @@ def _open(
         if not isinstance(episode, dict):
             problems.append(f"{path} must be a mapping")
             continue
-        _reject_unknown(
-            episode, {"episode", "anchor", "status", "importance"}, path, problems
-        )
+        _reject_unknown(episode, _EPISODE_FIELDS, path, problems)
         _ref(episode.get("episode"), bound, f"{path}.episode", problems)
         if episode.get("anchor") not in nodes:
             problems.append(f"{path}.anchor is not a node")
+        _episode_details(episode, nodes, bound, path, problems)
 
 
 def _queries(

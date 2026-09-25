@@ -1,0 +1,27 @@
+id: scenario-09-evidence-check-leaves-own-alone
+title: A failing evidence-only check neither changes own nor opens an episode
+covers: [scenario-9]
+start: 2026-09-24T13:00:00Z
+settings:
+  settle: 2m
+  rejoin_grace: 1m
+  startup_grace: 0s
+  coalesce_count: 3
+  coalesce_window: 60s
+graph:
+  - id: device
+    checks:
+      - {id: state, raise_hold: 0s, clear_hold: 30s, ttl: 1h, unknown_hold: 15m}
+      - {id: diagnostics, affects_own: false, raise_hold: 0s, clear_hold: 30s, ttl: 1h, unknown_hold: 15m}
+  - id: function
+    depends_on: [device]
+steps:
+  - at: 2026-09-24T13:00:00Z
+    ingest:
+      - {node: device, check: state, status: pass, reason: ok}
+      - {node: device, check: diagnostics, status: fail, reason: error_logged, evidence: {errors: 3}}
+    expect:
+      events: []
+      queries:
+        readiness:
+          function: {answer: ready, names: []}

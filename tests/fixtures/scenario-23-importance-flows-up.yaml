@@ -1,0 +1,30 @@
+id: scenario-23-importance-flows-up
+title: A low-importance root that takes down a critical function is critical
+covers: [scenario-23]
+start: 2026-09-24T19:00:00Z
+settings:
+  settle: 2m
+  rejoin_grace: 1m
+  startup_grace: 0s
+  coalesce_count: 3
+  coalesce_window: 60s
+graph:
+  - id: host
+    importance: low
+    checks:
+      - {id: link, raise_hold: 0s, clear_hold: 30s, ttl: 1h, unknown_hold: 15m}
+  - id: service
+    depends_on: [host]
+  - id: alarm
+    kind: function
+    importance: critical
+    depends_on: [service]
+steps:
+  - at: 2026-09-24T19:00:00Z
+    ingest:
+      - {node: host, check: link, status: fail, reason: unreachable}
+    expect:
+      bind:
+        host_ep: {opened: host}
+      events:
+        - {opened: {anchor: host, episode: $host_ep, importance: critical}}

@@ -1,0 +1,79 @@
+id: scenario-41-stale-routing
+title: A quiet high-importance sensor pages; a quiet maintenance sensor waits for the digest
+covers: [scenario-41]
+start: 2026-09-24T02:00:00Z
+settings:
+  settle: 2m
+  rejoin_grace: 1m
+  startup_grace: 0s
+  coalesce_count: 3
+  coalesce_window: 60s
+policy:
+  batch: 30s
+  recipients:
+    michael:
+      channels: [phone]
+      quiet_hours: "22:30-07:00"
+  digests:
+    morning:
+      at: "08:00"
+      to: michael
+  rules:
+    - match: {category: operation, importance: [high, critical]}
+      loudness: urgent
+      to: michael
+    - match: {status: warn, due_within: 24h}
+      loudness: notify
+      to: michael
+    - match: {category: maintenance}
+      loudness: digest
+      digest: morning
+      remind_every: 7d
+      escalate_after: 30d
+    - match: {status: [fail, unknown], importance: [high, critical]}
+      loudness: urgent
+      to: michael
+    - match: {status: fail}
+      loudness: notify
+      to: michael
+    - match: {}
+      loudness: digest
+      digest: morning
+graph:
+  - id: smoke_sensor
+    checks:
+      - {id: fresh, raise_hold: 0s, clear_hold: 30s, ttl: 15m, unknown_hold: 15m}
+  - id: smoke_alarm
+    kind: function
+    importance: high
+    depends_on: [smoke_sensor]
+  - id: motion_sensor
+    checks:
+      - {id: fresh, raise_hold: 0s, clear_hold: 30s, ttl: 15m, unknown_hold: 15m, labels: {category: maintenance}}
+  - id: hall_lighting
+    kind: function
+    importance: high
+    depends_on: [motion_sensor]
+steps:
+  - at: 2026-09-24T02:00:00Z
+    ingest:
+      - {node: smoke_sensor, check: fresh, status: pass, reason: fresh}
+      - {node: motion_sensor, check: fresh, status: pass, reason: fresh}
+    expect:
+      events: []
+      deliveries: []
+  - at: 2026-09-24T02:30:00Z
+    expect:
+      bind:
+        smoke_ep: {opened: smoke_sensor}
+        motion_ep: {opened: motion_sensor}
+      events:
+        - {opened: {anchor: smoke_sensor, episode: $smoke_ep, reasons: [stale]}}
+        - {opened: {anchor: motion_sensor, episode: $motion_ep, reasons: [stale]}}
+      deliveries:
+        - {loudness: urgent, episode: $smoke_ep, to: michael}
+  - at: 2026-09-24T08:00:00Z
+    expect:
+      events: []
+      deliveries:
+        - {loudness: digest, digest: morning, episode: $motion_ep, to: michael}

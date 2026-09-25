@@ -1,0 +1,70 @@
+id: scenario-29-resolved-before-digest
+title: An episode resolved before the digest is dropped from it
+covers: [scenario-29]
+start: 2026-09-24T04:00:00Z
+settings:
+  settle: 2m
+  rejoin_grace: 1m
+  startup_grace: 0s
+  coalesce_count: 3
+  coalesce_window: 60s
+policy:
+  batch: 30s
+  recipients:
+    michael:
+      channels: [phone]
+      quiet_hours: "22:30-07:00"
+  digests:
+    morning:
+      at: "08:00"
+      to: michael
+  rules:
+    - match: {category: operation, importance: [high, critical]}
+      loudness: urgent
+      to: michael
+    - match: {status: warn, due_within: 24h}
+      loudness: notify
+      to: michael
+    - match: {category: maintenance}
+      loudness: digest
+      digest: morning
+      remind_every: 7d
+      escalate_after: 30d
+    - match: {status: [fail, unknown], importance: [high, critical]}
+      loudness: urgent
+      to: michael
+    - match: {status: fail}
+      loudness: notify
+      to: michael
+    - match: {}
+      loudness: digest
+      digest: morning
+graph:
+  - id: sensor
+    checks:
+      - {id: battery, raise_hold: 0s, clear_hold: 30s, ttl: 1d, unknown_hold: 1h, labels: {category: maintenance}}
+steps:
+  - at: 2026-09-24T04:00:00Z
+    ingest:
+      - {node: sensor, check: battery, status: warn, reason: battery_low}
+    expect:
+      bind:
+        battery_ep: {opened: sensor}
+      events:
+        - {opened: {anchor: sensor, episode: $battery_ep}}
+      deliveries: []
+  - at: 2026-09-24T05:00:00Z
+    ingest:
+      - {node: sensor, check: battery, status: pass, reason: replaced}
+    expect:
+      events: []
+      deliveries: []
+  - at: 2026-09-24T05:00:30Z
+    expect:
+      events:
+        - {resolved: {episode: $battery_ep, resolution: cleared}}
+      deliveries: []
+  - at: 2026-09-24T08:00:00Z
+    expect:
+      events: []
+      deliveries: []

@@ -1,6 +1,6 @@
 # ADR 0016: Rules for AI-assisted development
 
-**Status:** Proposed
+**Status:** Accepted
 **Date:** 2026-09-24
 **Deciders:** Michael Cumming
 
