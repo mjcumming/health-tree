@@ -19,7 +19,7 @@ Each file records one decision: the context, what was decided, the options that 
 | [0013](0013-python-version-tracks-home-assistant.md) | Python version tracks Home Assistant | Accepted |
 | [0014](0014-toolchain-mirrors-home-assistant-core.md) | The toolchain mirrors Home Assistant core | Accepted |
 | [0015](0015-releases-from-tags-trusted-publishing.md) | Releases from tags through trusted publishing | Accepted |
-| [0016](0016-rules-for-ai-assisted-development.md) | Rules for AI-assisted development | Proposed |
+| [0016](0016-rules-for-ai-assisted-development.md) | Rules for AI-assisted development | Accepted |
 | [0017](0017-episode-ids-uuidv7-from-now.md) | Episode ids are UUIDv7 built from `now` | Accepted |
 | [0018](0018-durations-are-required.md) | Durations are required; the library has no timing defaults | Accepted |
 | [0019](0019-a-node-is-one-capability.md) | A node is one capability | Accepted |
