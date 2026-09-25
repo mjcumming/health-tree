@@ -1,6 +1,6 @@
 """Validate health-tree YAML fixtures against the RFP 0.4 draft and ADR 0024.
 
-The engine does not exist yet. This module checks the files that will drive it.
+It checks structure only. `tests/runner.py` runs the fixtures against the engine.
 """
 
 from collections.abc import Set as AbstractSet

@@ -1,0 +1,53 @@
+id: scenario-25-scoped-quiet-window
+title: A quiet window over a node and its dependents holds openings until it ends
+covers: [scenario-25]
+start: 2026-09-24T20:00:00Z
+settings:
+  settle: 2m
+  rejoin_grace: 1m
+  startup_grace: 0s
+  coalesce_count: 3
+  coalesce_window: 60s
+graph:
+  - id: hub
+    checks:
+      - {id: link, raise_hold: 0s, clear_hold: 30s, ttl: 1h, unknown_hold: 15m}
+  - id: device
+    depends_on: [hub]
+    checks:
+      - {id: state, raise_hold: 0s, clear_hold: 30s, ttl: 1h, unknown_hold: 15m}
+  - id: other
+    checks:
+      - {id: state, raise_hold: 0s, clear_hold: 30s, ttl: 1h, unknown_hold: 15m}
+steps:
+  - at: 2026-09-24T20:00:00Z
+    ingest:
+      - {node: hub, check: link, status: pass, reason: ok}
+      - {node: device, check: state, status: pass, reason: ok}
+      - {node: other, check: state, status: pass, reason: ok}
+    expect:
+      events: []
+  - at: 2026-09-24T20:01:00Z
+    quiet: {scope: node_and_dependents, node: hub, until: 2026-09-24T20:10:00Z}
+    expect:
+      events: []
+  - at: 2026-09-24T20:02:00Z
+    ingest:
+      - {node: device, check: state, status: fail, reason: fault}
+      - {node: other, check: state, status: fail, reason: fault}
+    expect:
+      bind:
+        other_ep: {opened: other}
+      events:
+        - {opened: {anchor: other, episode: $other_ep}}
+  - at: 2026-09-24T20:05:00Z
+    ingest:
+      - {node: hub, check: link, status: fail, reason: rebooting}
+    expect:
+      events: []
+  - at: 2026-09-24T20:10:00Z
+    expect:
+      bind:
+        hub_ep: {opened: hub}
+      events:
+        - {opened: {anchor: hub, episode: $hub_ep, recorded: [device]}}

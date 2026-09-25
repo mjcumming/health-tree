@@ -1,0 +1,36 @@
+id: scenario-02-device-fault-after-raise-hold
+title: A device fault under a healthy host opens on the device once its hold passes
+covers: [scenario-2]
+start: 2026-09-24T10:00:00Z
+settings:
+  settle: 2m
+  rejoin_grace: 1m
+  startup_grace: 0s
+  coalesce_count: 3
+  coalesce_window: 60s
+graph:
+  - id: host
+    checks:
+      - {id: ping, raise_hold: 0s, clear_hold: 30s, ttl: 1h, unknown_hold: 15m}
+  - id: device
+    depends_on: [host]
+    checks:
+      - {id: state, raise_hold: 30s, clear_hold: 30s, ttl: 1h, unknown_hold: 15m}
+steps:
+  - at: 2026-09-24T10:00:00Z
+    ingest:
+      - {node: host, check: ping, status: pass, reason: reachable}
+      - {node: device, check: state, status: pass, reason: ok}
+    expect:
+      events: []
+  - at: 2026-09-24T10:01:00Z
+    ingest:
+      - {node: device, check: state, status: fail, reason: fault}
+    expect:
+      events: []
+  - at: 2026-09-24T10:01:30Z
+    expect:
+      bind:
+        device_ep: {opened: device}
+      events:
+        - {opened: {anchor: device, episode: $device_ep, reasons: [fault], recorded: []}}

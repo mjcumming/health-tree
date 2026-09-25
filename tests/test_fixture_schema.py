@@ -1,4 +1,4 @@
-"""The fixture schema holds before any engine code exists (proposed ADR 0024)."""
+"""The fixture schema catches malformed fixtures before they run (ADR 0024)."""
 
 from pathlib import Path
 
@@ -19,10 +19,37 @@ def test_checked_in_fixtures_match_the_schema() -> None:
     validate_directory(FIXTURES)
     names = sorted(path.name for path in FIXTURES.glob("*.yaml"))
     assert names == [
+        "scenario-01-host-down-records-its-dependents.yaml",
+        "scenario-02-device-fault-after-raise-hold.yaml",
+        "scenario-03-controller-down-records-devices.yaml",
+        "scenario-04-stragglers-held-through-rejoin.yaml",
+        "scenario-05-unknown-parent-gates-then-opens.yaml",
+        "scenario-06-warn-parent-does-not-mute.yaml",
+        "scenario-08-two-reasons-one-episode.yaml",
+        "scenario-09-evidence-check-leaves-own-alone.yaml",
+        "scenario-10-expired-check-is-unknown.yaml",
+        "scenario-11-startup-grace-covers-a-wave.yaml",
+        "scenario-13-flap-inside-raise-hold.yaml",
         "scenario-14-parent-confirmed-inside-settle.yaml",
+        "scenario-15-late-parent-absorbs-child.yaml",
+        "scenario-16-older-child-episode-stays.yaml",
+        "scenario-17-warn-fail-warn-pass.yaml",
         "scenario-19-restore-open-episode.yaml",
+        "scenario-20-restored-episode-clears.yaml",
+        "scenario-22-two-roots-record-one-device.yaml",
+        "scenario-23-importance-flows-up.yaml",
         "scenario-24-coalesce-onto-open-episode.yaml",
+        "scenario-25-scoped-quiet-window.yaml",
+        "scenario-28-quiet-hours-and-urgency.yaml",
+        "scenario-29-resolved-before-digest.yaml",
+        "scenario-30-maintenance-reminded-then-escalated.yaml",
+        "scenario-31-due-within-matches-warn.yaml",
+        "scenario-34-readiness-names-causes.yaml",
         "scenario-36-readiness-answers.yaml",
+        "scenario-37-rejoin-restarts-stale-clocks.yaml",
+        "scenario-40-critical-failure-with-deadline-pages.yaml",
+        "scenario-41-stale-routing.yaml",
+        "scenario-42-readiness-looks-through-to-a-sensor.yaml",
         "scenario-43-maintenance-node-is-separate.yaml",
         "scenario-44-loudest-reason-wins.yaml",
         "scenario-45-group-dissolves-below-count.yaml",

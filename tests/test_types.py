@@ -6,8 +6,6 @@ from zoneinfo import ZoneInfo
 
 import pytest
 
-from health_tree.engine import Engine
-from health_tree.policy import Policy
 from health_tree.types import (
     Check,
     Digest,
@@ -309,13 +307,3 @@ def test_records_reject_broken_invariants(
     """A record that cannot be true is never built."""
     with pytest.raises(ValueError, match=message):
         build()
-
-
-def test_stubs_state_the_interface() -> None:
-    """The engine and policy exist with their RFP 8 shapes before any behavior."""
-    engine = Engine(_settings())
-    policy = Policy(_policy())
-    with pytest.raises(NotImplementedError):
-        engine.advance(NOW)
-    with pytest.raises(NotImplementedError):
-        policy.next_deadline()

@@ -54,4 +54,4 @@ steps:
         - {episode: $controller_ep, anchor: controller, recorded: [device]}
       queries:
         readiness:
-          function: {answer: blocked, names: [controller, device], by: dependency}
+          function: {answer: blocked, names: [controller], by: dependency}

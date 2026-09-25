@@ -1,0 +1,58 @@
+id: scenario-16-older-child-episode-stays
+title: An older child episode stays open through its parent's outage and nothing reopens
+covers: [scenario-16]
+start: 2026-09-24T18:00:00Z
+settings:
+  settle: 2m
+  rejoin_grace: 1m
+  startup_grace: 0s
+  coalesce_count: 3
+  coalesce_window: 60s
+graph:
+  - id: parent
+    checks:
+      - {id: link, raise_hold: 0s, clear_hold: 30s, ttl: null, unknown_hold: 15m}
+  - id: child
+    depends_on: [parent]
+    checks:
+      - {id: state, raise_hold: 0s, clear_hold: 30s, ttl: null, unknown_hold: 15m}
+steps:
+  - at: 2026-09-24T18:00:00Z
+    ingest:
+      - {node: parent, check: link, status: pass, reason: ok}
+      - {node: child, check: state, status: pass, reason: ok}
+    expect:
+      events: []
+  - at: 2026-09-24T18:01:00Z
+    ingest:
+      - {node: child, check: state, status: fail, reason: fault}
+    expect:
+      bind:
+        child_ep: {opened: child}
+      events:
+        - {opened: {anchor: child, episode: $child_ep}}
+  - at: 2026-09-26T18:00:00Z
+    ingest:
+      - {node: parent, check: link, status: fail, reason: unreachable}
+    expect:
+      bind:
+        parent_ep: {opened: parent}
+      events:
+        - {opened: {anchor: parent, episode: $parent_ep, recorded: [], absorbed: []}}
+      open:
+        - {episode: $child_ep, anchor: child}
+        - {episode: $parent_ep, anchor: parent}
+  - at: 2026-09-26T18:10:00Z
+    ingest:
+      - {node: parent, check: link, status: pass, reason: ok}
+    expect:
+      events: []
+  - at: 2026-09-26T18:10:31Z
+    expect:
+      events:
+        - {resolved: {episode: $parent_ep, resolution: cleared}}
+  - at: 2026-09-26T18:12:00Z
+    expect:
+      events: []
+      open:
+        - {episode: $child_ep, anchor: child}

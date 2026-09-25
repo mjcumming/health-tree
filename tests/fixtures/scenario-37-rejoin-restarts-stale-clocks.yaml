@@ -1,0 +1,68 @@
+id: scenario-37-rejoin-restarts-stale-clocks
+title: Devices that went quiet during an outage get a fresh stale clock at the rejoin
+covers: [scenario-37]
+start: 2026-09-24T00:00:00Z
+settings:
+  settle: 2m
+  rejoin_grace: 1m
+  startup_grace: 0s
+  coalesce_count: 3
+  coalesce_window: 60s
+graph:
+  - id: controller
+    checks:
+      - {id: link, raise_hold: 0s, clear_hold: 30s, ttl: null, unknown_hold: 15m}
+  - id: d1
+    depends_on: [controller]
+    checks:
+      - {id: fresh, raise_hold: 0s, clear_hold: 30s, ttl: 1h, unknown_hold: 15m}
+  - id: d2
+    depends_on: [controller]
+    checks:
+      - {id: fresh, raise_hold: 0s, clear_hold: 30s, ttl: 1h, unknown_hold: 15m}
+steps:
+  - at: 2026-09-24T00:00:00Z
+    ingest:
+      - {node: controller, check: link, status: pass, reason: ok}
+      - {node: d1, check: fresh, status: pass, reason: fresh}
+      - {node: d2, check: fresh, status: pass, reason: fresh}
+    expect:
+      events: []
+  - at: 2026-09-24T00:01:00Z
+    ingest:
+      - {node: controller, check: link, status: fail, reason: unreachable}
+    expect:
+      bind:
+        controller_ep: {opened: controller}
+      events:
+        - {opened: {anchor: controller, episode: $controller_ep, recorded: []}}
+  - at: 2026-09-24T01:20:00Z
+    expect:
+      events:
+        - {updated: {episode: $controller_ep, recorded: [d1, d2]}}
+  - at: 2026-09-24T02:01:00Z
+    ingest:
+      - {node: controller, check: link, status: pass, reason: ok}
+    expect:
+      events: []
+  - at: 2026-09-24T02:01:31Z
+    expect:
+      events:
+        - {resolved: {episode: $controller_ep, resolution: cleared}}
+      open: []
+  - at: 2026-09-24T02:30:00Z
+    ingest:
+      - {node: d1, check: fresh, status: pass, reason: fresh}
+    expect:
+      events: []
+  - at: 2026-09-24T03:16:30Z
+    expect:
+      events: []
+  - at: 2026-09-24T03:16:31Z
+    expect:
+      bind:
+        d2_ep: {opened: d2}
+      events:
+        - {opened: {anchor: d2, episode: $d2_ep, status: unknown, reasons: [stale]}}
+      open:
+        - {episode: $d2_ep, anchor: d2}

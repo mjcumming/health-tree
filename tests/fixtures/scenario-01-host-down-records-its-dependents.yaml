@@ -1,0 +1,48 @@
+id: scenario-01-host-down-records-its-dependents
+title: A failed host opens one episode and records what fails under it
+covers: [scenario-1]
+start: 2026-09-24T10:00:00Z
+settings:
+  settle: 2m
+  rejoin_grace: 1m
+  startup_grace: 0s
+  coalesce_count: 3
+  coalesce_window: 60s
+graph:
+  - id: host
+    checks:
+      - {id: ping, raise_hold: 0s, clear_hold: 30s, ttl: 1h, unknown_hold: 15m}
+  - id: integration
+    depends_on: [host]
+    checks:
+      - {id: api, raise_hold: 0s, clear_hold: 30s, ttl: 1h, unknown_hold: 15m}
+  - id: dev_a
+    depends_on: [integration]
+    checks:
+      - {id: state, raise_hold: 0s, clear_hold: 30s, ttl: 1h, unknown_hold: 15m}
+  - id: dev_b
+    depends_on: [integration]
+    checks:
+      - {id: state, raise_hold: 0s, clear_hold: 30s, ttl: 1h, unknown_hold: 15m}
+steps:
+  - at: 2026-09-24T10:00:00Z
+    ingest:
+      - {node: host, check: ping, status: pass, reason: reachable}
+      - {node: integration, check: api, status: pass, reason: ok}
+      - {node: dev_a, check: state, status: pass, reason: ok}
+      - {node: dev_b, check: state, status: pass, reason: ok}
+    expect:
+      events: []
+  - at: 2026-09-24T10:01:00Z
+    ingest:
+      - {node: host, check: ping, status: fail, reason: unreachable}
+      - {node: integration, check: api, status: fail, reason: unreachable}
+      - {node: dev_a, check: state, status: fail, reason: unavailable}
+      - {node: dev_b, check: state, status: fail, reason: unavailable}
+    expect:
+      bind:
+        host_ep: {opened: host}
+      events:
+        - {opened: {anchor: host, episode: $host_ep, reasons: [unreachable], recorded: [integration, dev_a, dev_b]}}
+      open:
+        - {episode: $host_ep, anchor: host, status: fail}

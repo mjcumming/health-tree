@@ -1,0 +1,53 @@
+id: scenario-34-readiness-names-causes
+title: Readiness names the causes, not the hardware that failed with them
+covers: [scenario-34]
+start: 2026-09-24T19:00:00Z
+settings:
+  settle: 2m
+  rejoin_grace: 1m
+  startup_grace: 0s
+  coalesce_count: 3
+  coalesce_window: 60s
+graph:
+  - id: eero_backyard
+    checks:
+      - {id: link, raise_hold: 0s, clear_hold: 30s, ttl: 1h, unknown_hold: 15m}
+  - id: speakers
+    depends_on: [eero_backyard]
+    checks:
+      - {id: state, raise_hold: 0s, clear_hold: 30s, ttl: 1h, unknown_hold: 15m}
+  - id: spotify
+    checks:
+      - {id: auth, raise_hold: 0s, clear_hold: 30s, ttl: 1d, unknown_hold: 1h}
+  - id: backyard_music
+    kind: function
+    depends_on: [speakers, spotify]
+steps:
+  - at: 2026-09-24T19:00:00Z
+    ingest:
+      - {node: eero_backyard, check: link, status: pass, reason: ok}
+      - {node: speakers, check: state, status: pass, reason: ok}
+      - {node: spotify, check: auth, status: pass, reason: ok}
+    expect:
+      events: []
+      queries:
+        readiness:
+          backyard_music: {answer: ready, names: []}
+  - at: 2026-09-24T19:01:00Z
+    ingest:
+      - {node: eero_backyard, check: link, status: fail, reason: unreachable}
+      - {node: speakers, check: state, status: fail, reason: unavailable}
+      - {node: spotify, check: auth, status: fail, reason: auth_required}
+    expect:
+      bind:
+        eero_ep: {opened: eero_backyard}
+        spotify_ep: {opened: spotify}
+      events:
+        - {opened: {anchor: eero_backyard, episode: $eero_ep, recorded: [speakers]}}
+        - {opened: {anchor: spotify, episode: $spotify_ep, recorded: []}}
+      queries:
+        readiness:
+          backyard_music: {answer: blocked, names: [eero_backyard, spotify], by: dependency}
+        explain:
+          backyard_music:
+            names: [eero_backyard, speakers, spotify]

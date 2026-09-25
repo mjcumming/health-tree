@@ -8,7 +8,7 @@ Health Tree is the layer that tells a root failure from its symptoms, says what 
 
 Home Assistant is the first consumer. Its integration, [homeostatic](docs/rfp.md#11-home-assistant-integration-later), lives in its own repository and is not part of this package.
 
-> **Status: design.** No engine code yet. The design of record is [docs/rfp.md](docs/rfp.md) (version 0.4, draft for review). Engine code waits until the types, stories, and scenarios in the RFP are accepted. Nothing is published to PyPI yet.
+> **Status: first engine.** The engine and the attention policy pass every story and scenario fixture. The design of record is [docs/rfp.md](docs/rfp.md) (version 0.4, draft for review), ADRs 0024 to 0027 are still proposed, and ADR 0028 is accepted. Nothing is published to PyPI yet.
 
 ## Principles
 
@@ -115,6 +115,7 @@ docs/adr/            architecture decision records
 
 - [docs/rfp.md](docs/rfp.md): what the library does. Change it before changing behavior.
 - [docs/adr](docs/adr/README.md): why, one decision per record.
+- [docs/ideas/homeostatic-ui.md](docs/ideas/homeostatic-ui.md): working notes for the integration's owner-facing surface. Not the spec.
 - [CHANGELOG.md](CHANGELOG.md): what changed.
 - [CONTRIBUTING.md](CONTRIBUTING.md): workflow, checks, and releases. AI agents: [AGENTS.md](AGENTS.md).
 - [SECURITY.md](SECURITY.md): how to report a vulnerability.

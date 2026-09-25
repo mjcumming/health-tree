@@ -1,0 +1,79 @@
+id: scenario-31-due-within-matches-warn
+title: A warning due within a day notifies, and one due later waits for the day to come
+covers: [scenario-31, scenario-39, story-5]
+start: 2026-09-24T09:00:00Z
+settings:
+  settle: 2m
+  rejoin_grace: 1m
+  startup_grace: 0s
+  coalesce_count: 3
+  coalesce_window: 60s
+policy:
+  batch: 30s
+  recipients:
+    michael:
+      channels: [phone]
+      quiet_hours: "22:30-07:00"
+  digests:
+    morning:
+      at: "08:00"
+      to: michael
+  rules:
+    - match: {category: operation, importance: [high, critical]}
+      loudness: urgent
+      to: michael
+    - match: {status: warn, due_within: 24h}
+      loudness: notify
+      to: michael
+    - match: {category: maintenance}
+      loudness: digest
+      digest: morning
+      remind_every: 7d
+      escalate_after: 30d
+    - match: {status: [fail, unknown], importance: [high, critical]}
+      loudness: urgent
+      to: michael
+    - match: {status: fail}
+      loudness: notify
+      to: michael
+    - match: {}
+      loudness: digest
+      digest: morning
+graph:
+  - id: disk_soon
+    checks:
+      - {id: capacity, raise_hold: 0s, clear_hold: 30s, ttl: 2d, unknown_hold: 1h}
+  - id: disk_later
+    checks:
+      - {id: capacity, raise_hold: 0s, clear_hold: 30s, ttl: 2d, unknown_hold: 1h}
+steps:
+  - at: 2026-09-24T09:00:00Z
+    ingest:
+      - {node: disk_soon, check: capacity, status: warn, reason: capacity_low, due_at: 2026-09-25T05:00:00Z}
+      - {node: disk_later, check: capacity, status: warn, reason: capacity_low, due_at: 2026-09-25T15:00:00Z}
+    expect:
+      bind:
+        soon_ep: {opened: disk_soon}
+        later_ep: {opened: disk_later}
+      events:
+        - {opened: {anchor: disk_soon, episode: $soon_ep}}
+        - {opened: {anchor: disk_later, episode: $later_ep}}
+      deliveries: []
+  - at: 2026-09-24T09:00:30Z
+    expect:
+      events: []
+      deliveries:
+        - {loudness: notify, episode: $soon_ep, to: michael}
+  - at: 2026-09-24T14:59:59Z
+    expect:
+      events: []
+      deliveries: []
+  - at: 2026-09-24T15:00:00Z
+    expect:
+      events: []
+      deliveries: []
+  - at: 2026-09-24T15:00:30Z
+    expect:
+      events: []
+      deliveries:
+        - {loudness: notify, episode: $later_ep, to: michael}

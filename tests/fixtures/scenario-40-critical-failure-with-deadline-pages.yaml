@@ -1,0 +1,60 @@
+id: scenario-40-critical-failure-with-deadline-pages
+title: A critical failure with a deadline pages instead of notifying
+covers: [scenario-40]
+start: 2026-09-24T09:00:00Z
+settings:
+  settle: 2m
+  rejoin_grace: 1m
+  startup_grace: 0s
+  coalesce_count: 3
+  coalesce_window: 60s
+policy:
+  batch: 30s
+  recipients:
+    michael:
+      channels: [phone]
+      quiet_hours: "22:30-07:00"
+  digests:
+    morning:
+      at: "08:00"
+      to: michael
+  rules:
+    - match: {category: operation, importance: [high, critical]}
+      loudness: urgent
+      to: michael
+    - match: {status: warn, due_within: 24h}
+      loudness: notify
+      to: michael
+    - match: {category: maintenance}
+      loudness: digest
+      digest: morning
+      remind_every: 7d
+      escalate_after: 30d
+    - match: {status: [fail, unknown], importance: [high, critical]}
+      loudness: urgent
+      to: michael
+    - match: {status: fail}
+      loudness: notify
+      to: michael
+    - match: {}
+      loudness: digest
+      digest: morning
+graph:
+  - id: ups
+    checks:
+      - {id: runtime, raise_hold: 0s, clear_hold: 30s, ttl: 1h, unknown_hold: 15m}
+  - id: server_power
+    kind: function
+    importance: critical
+    depends_on: [ups]
+steps:
+  - at: 2026-09-24T09:00:00Z
+    ingest:
+      - {node: ups, check: runtime, status: fail, reason: on_battery, due_at: 2026-09-24T10:00:00Z}
+    expect:
+      bind:
+        ups_ep: {opened: ups}
+      events:
+        - {opened: {anchor: ups, episode: $ups_ep, importance: critical}}
+      deliveries:
+        - {loudness: urgent, episode: $ups_ep, to: michael}

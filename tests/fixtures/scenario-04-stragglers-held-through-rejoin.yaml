@@ -1,0 +1,93 @@
+id: scenario-04-stragglers-held-through-rejoin
+title: A recovered controller's episode holds its stragglers through rejoin grace
+covers: [scenario-4]
+start: 2026-09-24T11:00:00Z
+settings:
+  settle: 2m
+  rejoin_grace: 1m
+  startup_grace: 0s
+  coalesce_count: 3
+  coalesce_window: 60s
+graph:
+  - id: controller
+    checks:
+      - {id: link, raise_hold: 0s, clear_hold: 30s, ttl: 1h, unknown_hold: 15m}
+  - id: d1
+    depends_on: [controller]
+    checks:
+      - {id: state, raise_hold: 0s, clear_hold: 30s, ttl: 1h, unknown_hold: 15m}
+  - id: d2
+    depends_on: [controller]
+    checks:
+      - {id: state, raise_hold: 0s, clear_hold: 30s, ttl: 1h, unknown_hold: 15m}
+  - id: d3
+    depends_on: [controller]
+    checks:
+      - {id: state, raise_hold: 0s, clear_hold: 30s, ttl: 1h, unknown_hold: 15m}
+  - id: d4
+    depends_on: [controller]
+    checks:
+      - {id: state, raise_hold: 0s, clear_hold: 30s, ttl: 1h, unknown_hold: 15m}
+  - id: d5
+    depends_on: [controller]
+    checks:
+      - {id: state, raise_hold: 0s, clear_hold: 30s, ttl: 1h, unknown_hold: 15m}
+steps:
+  - at: 2026-09-24T11:00:00Z
+    ingest:
+      - {node: controller, check: link, status: pass, reason: ok}
+      - {node: d1, check: state, status: pass, reason: ok}
+      - {node: d2, check: state, status: pass, reason: ok}
+      - {node: d3, check: state, status: pass, reason: ok}
+      - {node: d4, check: state, status: pass, reason: ok}
+      - {node: d5, check: state, status: pass, reason: ok}
+    expect:
+      events: []
+  - at: 2026-09-24T11:01:00Z
+    ingest:
+      - {node: controller, check: link, status: fail, reason: unreachable}
+      - {node: d1, check: state, status: fail, reason: fault}
+      - {node: d2, check: state, status: fail, reason: fault}
+      - {node: d3, check: state, status: fail, reason: fault}
+      - {node: d4, check: state, status: fail, reason: fault}
+      - {node: d5, check: state, status: fail, reason: fault}
+    expect:
+      bind:
+        controller_ep: {opened: controller}
+      events:
+        - {opened: {anchor: controller, episode: $controller_ep, reasons: [unreachable], recorded: [d1, d2, d3, d4, d5]}}
+  - at: 2026-09-24T11:02:00Z
+    ingest:
+      - {node: controller, check: link, status: pass, reason: ok}
+      - {node: d1, check: state, status: pass, reason: ok}
+    expect:
+      events: []
+  - at: 2026-09-24T11:02:31Z
+    expect:
+      events:
+        - {updated: {episode: $controller_ep, status: fail, reasons: [fault, fault, fault, fault], recorded: [d2, d3, d4, d5]}}
+      open:
+        - {episode: $controller_ep, anchor: controller}
+  - at: 2026-09-24T11:03:00Z
+    ingest:
+      - {node: d2, check: state, status: pass, reason: ok}
+    expect:
+      events: []
+  - at: 2026-09-24T11:03:31Z
+    expect:
+      events:
+        - {updated: {episode: $controller_ep, form: root, reasons: [fault, fault, fault, dependents_failing], recorded: [d3, d4, d5]}}
+      open:
+        - {episode: $controller_ep, anchor: controller, status: fail}
+  - at: 2026-09-24T11:05:00Z
+    ingest:
+      - {node: d3, check: state, status: pass, reason: ok}
+      - {node: d4, check: state, status: pass, reason: ok}
+      - {node: d5, check: state, status: pass, reason: ok}
+    expect:
+      events: []
+  - at: 2026-09-24T11:05:31Z
+    expect:
+      events:
+        - {resolved: {episode: $controller_ep, resolution: cleared}}
+      open: []

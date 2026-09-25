@@ -277,10 +277,7 @@ def _scenario_49() -> Script:
             ("function", _at(6, 2)): Readiness(
                 answer="blocked",
                 blocked_by="dependency",
-                nodes=(
-                    _condition("controller", Status.FAIL, "unreachable"),
-                    _condition("device", Status.FAIL, "unreachable"),
-                ),
+                nodes=(_condition("controller", Status.FAIL, "unreachable"),),
             ),
         },
     )
@@ -556,11 +553,10 @@ def _ready_too_soon(script: Script) -> None:
     script.readiness["function", _at(6, 2)] = Readiness(answer="ready", nodes=())
 
 
-def _device_first(script: Script) -> None:
+def _blame_the_device(script: Script) -> None:
     blocked = script.readiness["function", _at(6, 2)]
-    script.readiness["function", _at(6, 2)] = replace(
-        blocked, nodes=tuple(reversed(blocked.nodes))
-    )
+    device = _condition("device", Status.FAIL, "unreachable")
+    script.readiness["function", _at(6, 2)] = replace(blocked, nodes=(device,))
 
 
 def _blocked_by_own(script: Script) -> None:
@@ -577,9 +573,9 @@ def _blocked_by_own(script: Script) -> None:
             id="answer",
         ),
         pytest.param(
-            _device_first,
-            r"names: expected \['controller', 'device'\], got \['device', 'controller'\]",
-            id="roots-first",
+            _blame_the_device,
+            r"names: expected \['controller'\], got \['device'\]",
+            id="causes-only",
         ),
         pytest.param(
             _blocked_by_own,

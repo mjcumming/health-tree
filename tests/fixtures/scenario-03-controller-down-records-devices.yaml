@@ -1,0 +1,59 @@
+id: scenario-03-controller-down-records-devices
+title: Devices that fail under a failed controller are recorded on its episode
+covers: [scenario-3]
+start: 2026-09-24T11:00:00Z
+settings:
+  settle: 2m
+  rejoin_grace: 1m
+  startup_grace: 0s
+  coalesce_count: 3
+  coalesce_window: 60s
+graph:
+  - id: controller
+    checks:
+      - {id: link, raise_hold: 0s, clear_hold: 30s, ttl: 1h, unknown_hold: 15m}
+  - id: d1
+    depends_on: [controller]
+    checks:
+      - {id: cmd, raise_hold: 0s, clear_hold: 30s, ttl: 1h, unknown_hold: 15m}
+  - id: d2
+    depends_on: [controller]
+    checks:
+      - {id: cmd, raise_hold: 0s, clear_hold: 30s, ttl: 1h, unknown_hold: 15m}
+  - id: d3
+    depends_on: [controller]
+    checks:
+      - {id: cmd, raise_hold: 0s, clear_hold: 30s, ttl: 1h, unknown_hold: 15m}
+  - id: d4
+    depends_on: [controller]
+    checks:
+      - {id: cmd, raise_hold: 0s, clear_hold: 30s, ttl: 1h, unknown_hold: 15m}
+steps:
+  - at: 2026-09-24T11:00:00Z
+    ingest:
+      - {node: controller, check: link, status: pass, reason: ok}
+      - {node: d1, check: cmd, status: pass, reason: ok}
+      - {node: d2, check: cmd, status: pass, reason: ok}
+      - {node: d3, check: cmd, status: pass, reason: ok}
+      - {node: d4, check: cmd, status: pass, reason: ok}
+    expect:
+      events: []
+  - at: 2026-09-24T11:01:00Z
+    ingest:
+      - {node: controller, check: link, status: fail, reason: unreachable}
+    expect:
+      bind:
+        controller_ep: {opened: controller}
+      events:
+        - {opened: {anchor: controller, episode: $controller_ep, recorded: []}}
+  - at: 2026-09-24T11:02:00Z
+    ingest:
+      - {node: d1, check: cmd, status: fail, reason: fault}
+      - {node: d2, check: cmd, status: fail, reason: fault}
+      - {node: d3, check: cmd, status: fail, reason: fault}
+      - {node: d4, check: cmd, status: fail, reason: fault}
+    expect:
+      events:
+        - {updated: {episode: $controller_ep, form: root, reasons: [unreachable], recorded: [d1, d2, d3, d4]}}
+      open:
+        - {episode: $controller_ep, anchor: controller}

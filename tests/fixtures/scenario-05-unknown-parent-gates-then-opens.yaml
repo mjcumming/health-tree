@@ -1,0 +1,39 @@
+id: scenario-05-unknown-parent-gates-then-opens
+title: An unknown parent holds the child for settle, with a probe, and then the child opens
+covers: [scenario-5]
+start: 2026-09-24T12:00:00Z
+settings:
+  settle: 2m
+  rejoin_grace: 1m
+  startup_grace: 0s
+  coalesce_count: 3
+  coalesce_window: 60s
+graph:
+  - id: parent
+    checks:
+      - {id: link, raise_hold: 0s, clear_hold: 30s, ttl: 1h, unknown_hold: 15m}
+  - id: child
+    depends_on: [parent]
+    checks:
+      - {id: state, raise_hold: 0s, clear_hold: 30s, ttl: 1h, unknown_hold: 15m}
+steps:
+  - at: 2026-09-24T12:00:00Z
+    ingest:
+      - {node: child, check: state, status: pass, reason: ok}
+    expect:
+      events: []
+  - at: 2026-09-24T12:01:00Z
+    ingest:
+      - {node: child, check: state, status: fail, reason: fault}
+    expect:
+      events:
+        - {probe: parent}
+  - at: 2026-09-24T12:02:00Z
+    expect:
+      events: []
+  - at: 2026-09-24T12:03:00Z
+    expect:
+      bind:
+        child_ep: {opened: child}
+      events:
+        - {opened: {anchor: child, episode: $child_ep, reasons: [fault]}}
