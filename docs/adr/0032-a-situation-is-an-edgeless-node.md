@@ -1,6 +1,6 @@
 # ADR 0032: A situation is an edgeless node
 
-**Status:** Proposed
+**Status:** Accepted
 **Date:** 2026-09-25
 **Deciders:** Michael Cumming
 

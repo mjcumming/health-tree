@@ -578,7 +578,7 @@ The practical design rule is: **retain HA's original state and correction path; 
 
 ## 16. The first release: decisions and scope
 
-Proposed 2026-09-25. Michael answered the decision table the same day; his answers are recorded below, and all twelve are settled. Answer 1 contradicted RFP 0.5 section 2. RFP 0.6 and ADRs 0031 and 0032, both proposed, now carry it; it takes effect when those are accepted. Until then everything here is direction for the integration, not library behavior. If accepted, this section replaces the "First usable release" row in section 13 and closes the matching items in "Still to argue" and in section 13's next decisions.
+Proposed 2026-09-25. Michael answered the decision table the same day; his answers are recorded below, and all twelve are settled. Answer 1 contradicted RFP 0.5 section 2. RFP 0.6 and ADRs 0031 and 0032 are accepted, so situation alerts are library behavior. The rest of this section is still direction for the integration. If this section is accepted, it replaces the "First usable release" row in section 13 and closes the matching items in "Still to argue" and in section 13's next decisions.
 
 Why this section exists: section 13's first release contains nearly every surface in this worksheet, which contradicts its own ten-minute setup hypothesis. This section keeps what makes the nine stories in RFP section 9 visible and explainable, and settles the model questions that would be expensive to change later.
 
@@ -720,7 +720,7 @@ Nothing in the advanced layer may be needed to answer "what is broken, and what 
 
 ### Library and RFP work that comes first
 
-1. ~~An RFP change and ADR for decision 1.~~ Drafted: RFP 0.6, ADRs 0031 and 0032, story 10, and scenarios 61 to 64, all passing against the current engine.
+1. ~~An RFP change and ADR for decision 1.~~ Accepted: RFP 0.6, ADRs 0031 and 0032, story 10, and scenarios 61 to 64, all passing against the current engine.
 2. An ADR for a supported read model (section 12).
 3. ~~The `impact`, `coverage`, and `rollup` queries.~~ Done: merged in PR #4 (ADR 0029).
 4. Stable source ids, with rules and declared edges stored as introspectable data.
@@ -730,7 +730,7 @@ Nothing in the advanced layer may be needed to answer "what is broken, and what 
 
 | # | Decision | Answer |
 | --- | --- | --- |
-| 1 | Situation alerts in the first release | Yes, detected only by HA rules bound as entities. RFP 0.6, ADRs 0031 and 0032 (proposed) |
+| 1 | Situation alerts in the first release | Yes, detected only by HA rules bound as entities. RFP 0.6, ADRs 0031 and 0032 (accepted) |
 | 2 | Catalog as attribute-matching rules | Yes. Special cases are narrow rules |
 | 3 | Rule match fields | All of them, now. Report changes after moves |
 | 4 | Enrollment default | Integration config: watch all supported, passive, notifications off until activated |
