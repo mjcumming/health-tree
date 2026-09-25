@@ -42,6 +42,9 @@ All notable changes to this project are documented here. The format follows [Kee
 ### Changed
 
 - ADR 0029 is accepted: public query records and adapter-owned views.
+- Documented current Home Assistant error and repair conventions in the UI worksheet, with release-source references and proposed reuse of native setup, reauthentication, entity availability, Repairs, diagnostics, and action errors.
+- The Homeostatic UI proposal now includes user-created alerts and rule-reported conditions, with shared attention, explicit clearing and freshness, restart/schedule handling, and a proposed situation-alert scope extension. Library behavior is unchanged.
+- Expanded the Homeostatic UI ideas worksheet with proposed setup, monitoring, alert, coverage, maintenance, and migration workflows, implementation gaps, and acceptance walkthroughs. These remain proposals, not library behavior changes.
 - ADRs 0016 and 0024 to 0028 are accepted. ADR 0012 is superseded by 0024, and ADR 0023 by 0025.
 - Rule 15: when an anchor recovers while nodes it muted still fail, its episode holds them through rejoin grace instead of sending an all-clear. They then become members, or each opens its own episode (scenario 4).
 - Readiness names causes only. Hardware behind a failed dependency is not named, and `explain` shows the chain (scenarios 34 and 49).
