@@ -1,0 +1,35 @@
+id: scenario-07-healthy-parent-leaves-child-as-root
+title: A child that fails under a passing parent is its own root
+covers: [scenario-7]
+start: 2026-09-24T12:00:00Z
+settings:
+  settle: 2m
+  rejoin_grace: 1m
+  startup_grace: 0s
+  coalesce_count: 3
+  coalesce_window: 60s
+graph:
+  - id: parent
+    checks:
+      - {id: state, raise_hold: 0s, clear_hold: 30s, ttl: 1h, unknown_hold: 15m}
+  - id: child
+    depends_on: [parent]
+    checks:
+      - {id: state, raise_hold: 0s, clear_hold: 30s, ttl: 1h, unknown_hold: 15m}
+steps:
+  - at: 2026-09-24T12:00:00Z
+    ingest:
+      - {node: parent, check: state, status: pass, reason: ok}
+      - {node: child, check: state, status: pass, reason: ok}
+    expect:
+      events: []
+  - at: 2026-09-24T12:01:00Z
+    ingest:
+      - {node: child, check: state, status: fail, reason: fault}
+    expect:
+      bind:
+        child_ep: {opened: child}
+      events:
+        - {opened: {anchor: child, episode: $child_ep, form: root, recorded: []}}
+      open:
+        - {episode: $child_ep, anchor: child}

@@ -1,0 +1,68 @@
+id: scenario-21-remove-and-replace-at-runtime
+title: Removing a failed host resolves its episode, and the graph can change at runtime
+covers: [scenario-21]
+start: 2026-09-24T13:00:00Z
+settings:
+  settle: 2m
+  rejoin_grace: 1m
+  startup_grace: 0s
+  coalesce_count: 3
+  coalesce_window: 60s
+graph:
+  - id: host
+    checks:
+      - {id: state, raise_hold: 0s, clear_hold: 30s, ttl: 1h, unknown_hold: 15m}
+  - id: device
+    depends_on: [host]
+    checks:
+      - {id: state, raise_hold: 0s, clear_hold: 30s, ttl: 1h, unknown_hold: 15m}
+steps:
+  - at: 2026-09-24T13:00:00Z
+    ingest:
+      - {node: host, check: state, status: pass, reason: ok}
+      - {node: device, check: state, status: pass, reason: ok}
+    expect:
+      events: []
+  - at: 2026-09-24T13:01:00Z
+    ingest:
+      - {node: host, check: state, status: fail, reason: unreachable}
+      - {node: device, check: state, status: fail, reason: unavailable}
+    expect:
+      bind:
+        host_ep: {opened: host}
+      events:
+        - {opened: {anchor: host, episode: $host_ep, recorded: [device]}}
+  - at: 2026-09-24T13:02:00Z
+    remove: host
+    expect:
+      events:
+        - {resolved: {episode: $host_ep, resolution: removed}}
+      open: []
+  - at: 2026-09-24T13:02:30Z
+    register:
+      id: new_host
+      checks:
+        - {id: state, raise_hold: 0s, clear_hold: 30s, ttl: 1h, unknown_hold: 15m}
+    expect:
+      events: []
+  - at: 2026-09-24T13:02:40Z
+    register:
+      id: device
+      depends_on: [new_host]
+      checks:
+        - {id: state, raise_hold: 0s, clear_hold: 30s, ttl: 1h, unknown_hold: 15m}
+    ingest:
+      - {node: new_host, check: state, status: pass, reason: ok}
+    expect:
+      events: []
+      queries:
+        impact:
+          new_host:
+            importance: normal
+            nodes: [{node: device, importance: normal}]
+  - at: 2026-09-24T13:03:00Z
+    expect:
+      bind:
+        device_ep: {opened: device}
+      events:
+        - {opened: {anchor: device, episode: $device_ep, reasons: [unavailable]}}

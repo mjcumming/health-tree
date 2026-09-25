@@ -1,0 +1,52 @@
+id: scenario-32-shelved-episode-waits
+title: A shelved episode delivers nothing until the shelf ends
+covers: [scenario-32]
+start: 2026-09-24T14:00:00Z
+settings:
+  settle: 2m
+  rejoin_grace: 1m
+  startup_grace: 0s
+  coalesce_count: 3
+  coalesce_window: 60s
+policy:
+  batch: 30s
+  recipients:
+    michael:
+      channels: [phone]
+  digests: {}
+  rules:
+    - match: {}
+      loudness: notify
+      to: michael
+graph:
+  - id: printer
+    checks:
+      - {id: state, raise_hold: 0s, clear_hold: 30s, ttl: null, unknown_hold: 15m}
+steps:
+  - at: 2026-09-24T14:00:00Z
+    ingest:
+      - {node: printer, check: state, status: fail, reason: paper_jam}
+    expect:
+      bind:
+        printer_ep: {opened: printer}
+      events:
+        - {opened: {anchor: printer, episode: $printer_ep}}
+      deliveries: []
+  - at: 2026-09-24T14:00:10Z
+    shelve: {episode: $printer_ep, until: 2026-09-24T18:00:00Z}
+    expect:
+      events: []
+      deliveries: []
+  - at: 2026-09-24T14:00:30Z
+    expect:
+      events: []
+      deliveries: []
+  - at: 2026-09-24T17:59:59Z
+    expect:
+      events: []
+      deliveries: []
+  - at: 2026-09-24T18:00:00Z
+    expect:
+      events: []
+      deliveries:
+        - {loudness: notify, episode: $printer_ep, to: michael}

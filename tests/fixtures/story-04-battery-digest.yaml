@@ -1,6 +1,6 @@
 id: story-04-battery-digest
 title: A quiet sensor is in the morning digest
-covers: [story-4, scenario-27]
+covers: [story-4, scenario-18, scenario-27, scenario-33]
 start: 2026-09-24T03:43:00Z
 settings:
   settle: 2m

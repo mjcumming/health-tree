@@ -177,6 +177,10 @@ class ScriptedEngine:
         """Record the registration."""
         return self._events("register", node.node_id, now)
 
+    def remove(self, node_id: str, now: datetime) -> list[Event]:
+        """Record the removal."""
+        return self._events("remove", node_id, now)
+
     def ingest_many(
         self, observations: Sequence[Observation], now: datetime
     ) -> list[Event]:
@@ -243,6 +247,11 @@ class ScriptedPolicy:
     def advance(self, now: datetime, context: PolicyContext) -> list[Delivery]:
         """Deliver scripted digests."""
         return self.script.digests.get(now, [])
+
+    def shelve(self, episode_id: str, until: datetime, now: datetime) -> list[Delivery]:
+        """Record the shelf."""
+        self.script.calls.append(("shelve", (episode_id, until), now))
+        return []
 
     def snapshot(self) -> dict[str, JSONValue]:
         """Return the scripted state."""

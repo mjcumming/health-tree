@@ -25,6 +25,7 @@ def test_checked_in_fixtures_match_the_schema() -> None:
         "scenario-04-stragglers-held-through-rejoin.yaml",
         "scenario-05-unknown-parent-gates-then-opens.yaml",
         "scenario-06-warn-parent-does-not-mute.yaml",
+        "scenario-07-healthy-parent-leaves-child-as-root.yaml",
         "scenario-08-two-reasons-one-episode.yaml",
         "scenario-09-evidence-check-leaves-own-alone.yaml",
         "scenario-10-expired-check-is-unknown.yaml",
@@ -36,6 +37,7 @@ def test_checked_in_fixtures_match_the_schema() -> None:
         "scenario-17-warn-fail-warn-pass.yaml",
         "scenario-19-restore-open-episode.yaml",
         "scenario-20-restored-episode-clears.yaml",
+        "scenario-21-remove-and-replace-at-runtime.yaml",
         "scenario-22-two-roots-record-one-device.yaml",
         "scenario-23-importance-flows-up.yaml",
         "scenario-24-coalesce-onto-open-episode.yaml",
@@ -44,6 +46,7 @@ def test_checked_in_fixtures_match_the_schema() -> None:
         "scenario-29-resolved-before-digest.yaml",
         "scenario-30-maintenance-reminded-then-escalated.yaml",
         "scenario-31-due-within-matches-warn.yaml",
+        "scenario-32-shelved-episode-waits.yaml",
         "scenario-34-readiness-names-causes.yaml",
         "scenario-35-coverage-evidence-gaps.yaml",
         "scenario-36-readiness-answers.yaml",
@@ -68,8 +71,12 @@ def test_checked_in_fixtures_match_the_schema() -> None:
         "scenario-57-potential-impact.yaml",
         "scenario-58-view-rollup.yaml",
         "scenario-59-group-rollup.yaml",
+        "story-02-detector-hangs.yaml",
         "story-04-battery-digest.yaml",
+        "story-06-ai-box.yaml",
+        "story-07-eero-node-down.yaml",
         "story-08-garage-door.yaml",
+        "story-09-insteon-controller-chokes.yaml",
     ]
 
 
@@ -352,4 +359,68 @@ def test_schema_rejects_a_quiet_window_on_restart() -> None:
     document = yaml.safe_load((FIXTURES / filename).read_text(encoding="utf-8"))
     document["steps"][2]["restart"] = True
     with pytest.raises(FixtureSchemaError, match="cannot restart"):
+        validate_fixture(document, filename=filename)
+
+
+@pytest.mark.parametrize(
+    ("filename", "index", "change", "message"),
+    [
+        pytest.param(
+            "scenario-21-remove-and-replace-at-runtime.yaml",
+            2,
+            {"remove": "nowhere"},
+            "remove must name a node",
+            id="remove-unknown-node",
+        ),
+        pytest.param(
+            "scenario-21-remove-and-replace-at-runtime.yaml",
+            3,
+            {"register": {"id": "new_host", "depends_on": ["nowhere"]}},
+            "depends on unknown nowhere",
+            id="register-unknown-dependency",
+        ),
+        pytest.param(
+            "scenario-21-remove-and-replace-at-runtime.yaml",
+            3,
+            {"restart": True},
+            "cannot restart and also register",
+            id="restart-with-register",
+        ),
+        pytest.param(
+            "scenario-21-remove-and-replace-at-runtime.yaml",
+            1,
+            {"shelve": {"episode": "$host_ep", "until": "2026-09-24T14:00:00Z"}},
+            "requires a policy",
+            id="shelve-without-policy",
+        ),
+        pytest.param(
+            "scenario-32-shelved-episode-waits.yaml",
+            1,
+            {"shelve": {"episode": "$other", "until": "2026-09-24T18:00:00Z"}},
+            "unbound",
+            id="shelve-unbound-episode",
+        ),
+        pytest.param(
+            "scenario-32-shelved-episode-waits.yaml",
+            1,
+            {"shelve": {"episode": "$printer_ep", "until": "2026-09-24T14:00:10Z"}},
+            "after the step",
+            id="shelve-ends-at-the-step",
+        ),
+        pytest.param(
+            "scenario-32-shelved-episode-waits.yaml",
+            1,
+            {"shelve": ["$printer_ep"]},
+            "must be a mapping",
+            id="shelve-not-a-mapping",
+        ),
+    ],
+)
+def test_schema_rejects_bad_runtime_steps(
+    filename: str, index: int, change: dict[str, object], message: str
+) -> None:
+    """Register, remove, and shelve steps name real nodes, episodes, and times."""
+    document = yaml.safe_load((FIXTURES / filename).read_text(encoding="utf-8"))
+    document["steps"][index].update(change)
+    with pytest.raises(FixtureSchemaError, match=message):
         validate_fixture(document, filename=filename)

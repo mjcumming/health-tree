@@ -446,7 +446,19 @@ def _steps(
             problems.append(f"{path} must be a mapping")
             continue
         _reject_unknown(
-            step, {"at", "quiet", "ingest", "restart", "expect"}, path, problems
+            step,
+            {
+                "at",
+                "register",
+                "remove",
+                "quiet",
+                "ingest",
+                "shelve",
+                "restart",
+                "expect",
+            },
+            path,
+            problems,
         )
         at = _datetime(step.get("at"), f"{path}.at", problems)
         if at is not None and start is not None and at < start:
@@ -455,8 +467,19 @@ def _steps(
             problems.append(f"{path}.at must be after the previous step")
         if at is not None:
             previous_step = at
-        if step.get("restart") is True and ("ingest" in step or "quiet" in step):
-            problems.append(f"{path} cannot restart and also quiet or ingest")
+        actions = {"register", "remove", "quiet", "ingest", "shelve"} & set(step)
+        if step.get("restart") is True and actions:
+            problems.append(
+                f"{path} cannot restart and also {', '.join(sorted(actions))}"
+            )
+        if "register" in step:
+            _register_step(step["register"], nodes, f"{path}.register", problems)
+        if "remove" in step and step["remove"] not in nodes:
+            problems.append(f"{path}.remove must name a node")
+        if "shelve" in step:
+            _shelve_step(
+                step["shelve"], bound, at, has_policy, f"{path}.shelve", problems
+            )
         if "quiet" in step:
             _quiet_window(step["quiet"], nodes, at, f"{path}.quiet", problems)
         if "ingest" in step:
@@ -468,6 +491,44 @@ def _steps(
             problems.append(f"{path}.expect must be a mapping")
             continue
         _expect(expect, path, nodes, views, bound, has_policy, problems)
+
+
+def _register_step(
+    value: object,
+    nodes: dict[str, set[str]],
+    where: str,
+    problems: list[str],
+) -> None:
+    """A node added or replaced at runtime. Later steps may refer to it."""
+    node_id, check_ids, depends = _node(value, where, problems)
+    problems.extend(
+        f"{where}: depends on unknown {target}"
+        for target in depends
+        if target not in nodes
+    )
+    if node_id is not None:
+        nodes[node_id] = check_ids
+
+
+def _shelve_step(
+    value: object,
+    bound: set[str],
+    at: datetime | None,
+    has_policy: bool,
+    where: str,
+    problems: list[str],
+) -> None:
+    """An operator shelves one bound episode until a later time."""
+    if not has_policy:
+        problems.append(f"{where} requires a policy")
+    if not isinstance(value, dict):
+        problems.append(f"{where} must be a mapping")
+        return
+    _reject_unknown(value, {"episode", "until"}, where, problems)
+    _ref(value.get("episode"), bound, f"{where}.episode", problems)
+    until = _datetime(value.get("until"), f"{where}.until", problems)
+    if until is not None and at is not None and until <= at:
+        problems.append(f"{where}.until must be after the step")
 
 
 def _quiet_window(

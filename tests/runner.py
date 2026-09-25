@@ -9,14 +9,18 @@ Each step calls, in order and all at the step's `at`:
 
 1. `engine.advance`
 2. on a restart: snapshot both, round-trip the snapshots through JSON, build a
-   new policy and restore it, then build a new engine, register the graph, and
-   restore it
-3. `engine.quiet`, when the step opens a quiet window
-4. `engine.ingest_many`, with the step's whole `ingest` list as one batch
-5. `policy.handle` for every event, in order, as each call returns them
-6. `policy.advance`
+   new policy and restore it, then build a new engine, register the current
+   graph, and restore it
+3. `engine.register`, when the step adds or replaces a node
+4. `engine.remove`, when the step removes one
+5. `engine.quiet`, when the step opens a quiet window
+6. `engine.ingest_many`, with the step's whole `ingest` list as one batch
+7. `policy.shelve`, when the step shelves an episode
+8. `policy.handle` for every event, in order, as each call returns them
+9. `policy.advance`
 
-The runner tracks open episodes from the events alone. It fills in no durations.
+The runner tracks open episodes from the events alone, and the current graph
+from the fixture and its register and remove steps. It fills in no durations.
 """
 
 from collections import Counter
@@ -82,6 +86,10 @@ class EngineLike(Protocol):
         """Add a node."""
         ...
 
+    def remove(self, node_id: str, now: datetime) -> list[Event]:
+        """Remove a node."""
+        ...
+
     def ingest_many(
         self, observations: Sequence[Observation], now: datetime
     ) -> list[Event]:
@@ -138,6 +146,10 @@ class PolicyLike(Protocol):
         """Move time forward."""
         ...
 
+    def shelve(self, episode_id: str, until: datetime, now: datetime) -> list[Delivery]:
+        """Hold one episode's deliveries."""
+        ...
+
     def snapshot(self) -> dict[str, JSONValue]:
         """Return all state."""
         ...
@@ -156,8 +168,11 @@ class Step:
     """One fixture step: what to do at `at`, and what it must produce."""
 
     at: datetime
+    register: Node | None
+    remove: str | None
     quiet: QuietWindow | None
     ingest: tuple[Observation, ...]
+    shelve: tuple[str, datetime] | None
     restart: bool
     expect: Mapping[str, Any]
 
@@ -280,10 +295,16 @@ def _in_dependency_order(nodes: Iterable[Node]) -> tuple[Node, ...]:
 
 def _step(data: Mapping[str, Any]) -> Step:
     at = _timestamp(data["at"])
+    shelve = data.get("shelve")
     return Step(
         at=at,
+        register=_node(data["register"]) if "register" in data else None,
+        remove=data.get("remove"),
         quiet=_quiet(data["quiet"]) if "quiet" in data else None,
         ingest=tuple(_observation(item, at) for item in data.get("ingest", [])),
+        shelve=(
+            None if shelve is None else (shelve["episode"], _timestamp(shelve["until"]))
+        ),
         restart=data.get("restart", False),
         expect=data["expect"],
     )
@@ -396,8 +417,10 @@ class _Run:
     policy: PolicyLike | None = field(init=False)
     bindings: dict[str, str] = field(init=False, default_factory=dict)
     open: dict[str, Episode] = field(init=False, default_factory=dict)
+    graph: dict[str, Node] = field(init=False, default_factory=dict)
 
     def __post_init__(self) -> None:
+        self.graph = {node.node_id: node for node in self.fixture.nodes}
         self.engine = self.engine_factory(self.fixture.settings)
         config = self.fixture.policy
         self.policy = None if config is None else self.policy_factory(config)
@@ -415,6 +438,19 @@ class _Run:
         self._call(self.engine.advance(step.at), step.at, events, deliveries)
         if step.restart:
             self._restart(step.at, events, deliveries)
+        if step.register is not None:
+            self.graph[step.register.node_id] = step.register
+            self._call(
+                self.engine.register(step.register, step.at),
+                step.at,
+                events,
+                deliveries,
+            )
+        if step.remove is not None:
+            del self.graph[step.remove]
+            self._call(
+                self.engine.remove(step.remove, step.at), step.at, events, deliveries
+            )
         if step.quiet is not None:
             self._call(
                 self.engine.quiet(step.quiet, step.at), step.at, events, deliveries
@@ -426,6 +462,11 @@ class _Run:
                 events,
                 deliveries,
             )
+        if step.shelve is not None:
+            assert self.policy is not None
+            reference, until = step.shelve
+            episode_id = self._resolve(reference) or reference
+            deliveries.extend(self.policy.shelve(episode_id, until, step.at))
         if self.policy is not None:
             deliveries.extend(self.policy.advance(step.at, CONTEXT))
         problems = self._bind(step.expect, events)
@@ -447,7 +488,7 @@ class _Run:
 
     def _register(self, now: datetime) -> list[Event]:
         events: list[Event] = []
-        for node in self.fixture.nodes:
+        for node in _in_dependency_order(self.graph.values()):
             events.extend(self.engine.register(node, now))
         return events
 
