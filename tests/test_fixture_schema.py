@@ -78,6 +78,7 @@ def test_checked_in_fixtures_match_the_schema() -> None:
         "scenario-72-reminders-respect-quiet-hours.yaml",
         "scenario-73-activation-restarts-attention.yaml",
         "scenario-74-atomic-graph-registration.yaml",
+        "scenario-75-group-rejoin-final-evidence.yaml",
         "story-02-detector-hangs.yaml",
         "story-04-battery-digest.yaml",
         "story-06-ai-box.yaml",

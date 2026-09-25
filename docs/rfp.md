@@ -547,6 +547,8 @@ Each is tagged with its area.
 
 74. **Engine.** Register a complete graph or replace multiple nodes together. A dependency can name another node later in the batch. Rewire a dependency in one call without an intermediate cycle, retaining observations and episode identity. Invalid batches leave graph, check state, and time unchanged. Batch registration evaluates only the final graph.
 
+75. **Engine.** When a group loses enough members to dissolve, apply their rejoin stale-clock resets before emitting the call's final events. An unknown member with a restarted clock cannot open a stale episode in that call. Immediate snapshot/restore must not introduce an extra update.
+
 ## 11. Home Assistant integration, later
 
 Not part of this library. Recorded so the boundary stays visible. It is a separate repository, named `homeostatic`. As of 2026-09-25, the name is free on GitHub (`mjcumming/homeostatic`) and PyPI, with no colliding Home Assistant or HACS project found. `homeostat` was considered and set aside: the name is live at github.com/freol35241/homeostat, an active, unrelated home-automation project.
@@ -676,3 +678,4 @@ The library is done when:
 
 - Atomic graph registration through `register_many`, with final-graph validation, retained check state, and one evaluation (ADR 0033). Single registration delegates to it.
 - Scenario 74 and a batch-registration fixture step cover simultaneous dependency rewiring, forward references, retained evidence, and restart.
+- Scenario 75 covers final event consistency after a group dissolves and its members rejoin.

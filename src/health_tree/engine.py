@@ -624,8 +624,9 @@ class Engine:
             state.advance(now)
         self._windows = [window for window in self._windows if window.until > now]
         frame = self._build_frame(now)
+        if self._update_members(frame):
+            frame = self._build_frame(now)
         self._frame = frame
-        self._update_members(frame)
         self._resolve_recovered(frame)
         probes = self._gate(frame)
         self._open(frame)
@@ -696,8 +697,9 @@ class Engine:
         into.absorbed.append(state.episode_id)
         self._close(state, "absorbed", into.episode_id)
 
-    def _update_members(self, frame: _Frame) -> None:
-        """Members leave on recovery; too few left dissolves the group (ADR 0021)."""
+    def _update_members(self, frame: _Frame) -> bool:
+        """Dissolve undersized groups; report whether stale clocks restarted."""
+        rejoined = False
         for state in self._episodes.values():
             self._update_holding(state, frame)
         for state in list(self._episodes.values()):
@@ -711,10 +713,12 @@ class Engine:
                 continue
             for member in state.members:
                 self._rejoin(member, frame.now)
+                rejoined = True
             state.members.clear()
             state.members_since = None
             if state.form == "group":
                 self._close(state, "cleared")
+        return rejoined
 
     def _update_holding(self, state: _EpisodeState, frame: _Frame) -> None:
         """Rule 15: stragglers held through rejoin grace become members, or go.
