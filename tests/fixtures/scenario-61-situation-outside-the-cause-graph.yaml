@@ -1,0 +1,70 @@
+id: scenario-61-situation-outside-the-cause-graph
+title: A situation is not gated, muted, recorded, or quieted by its source's controller
+covers: [scenario-61]
+start: 2026-09-25T01:00:00Z
+settings:
+  settle: 2m
+  rejoin_grace: 1m
+  startup_grace: 0s
+  coalesce_count: 3
+  coalesce_window: 60s
+graph:
+  - id: hub
+    kind: integration
+    checks:
+      - {id: link, raise_hold: 0s, clear_hold: 30s, ttl: 1h, unknown_hold: 15m}
+  - id: leak_sensor
+    kind: device
+    depends_on: [hub]
+    checks:
+      - {id: fresh, raise_hold: 0s, clear_hold: 30s, ttl: 1h, unknown_hold: 15m}
+  - id: water_leak
+    kind: situation
+    importance: critical
+    labels:
+      category: situation
+      source: leak_sensor
+    checks:
+      - {id: rule, raise_hold: 0s, clear_hold: 0s, ttl: null, unknown_hold: 15m}
+steps:
+  - at: 2026-09-25T01:00:00Z
+    ingest:
+      - {node: hub, check: link, status: pass, reason: ok}
+      - {node: leak_sensor, check: fresh, status: pass, reason: fresh}
+      - {node: water_leak, check: rule, status: pass, reason: dry}
+    expect:
+      events: []
+  - at: 2026-09-25T01:01:00Z
+    quiet: {scope: node_and_dependents, node: hub, until: 2026-09-25T01:30:00Z}
+    expect:
+      events: []
+  - at: 2026-09-25T01:05:00Z
+    ingest:
+      - {node: hub, check: link, status: unknown, reason: restarting}
+      - {node: water_leak, check: rule, status: fail, reason: water_detected}
+    expect:
+      bind:
+        leak_ep: {opened: water_leak}
+      events:
+        - {opened: {anchor: water_leak, episode: $leak_ep, importance: critical, reasons: [water_detected]}}
+  - at: 2026-09-25T01:10:00Z
+    ingest:
+      - {node: hub, check: link, status: fail, reason: unreachable}
+      - {node: leak_sensor, check: fresh, status: fail, reason: unreachable}
+    expect:
+      events: []
+      open:
+        - {episode: $leak_ep, anchor: water_leak}
+  - at: 2026-09-25T01:30:00Z
+    expect:
+      bind:
+        hub_ep: {opened: hub}
+      events:
+        - {opened: {anchor: hub, episode: $hub_ep, recorded: [leak_sensor]}}
+      open:
+        - {episode: $leak_ep, anchor: water_leak}
+        - {episode: $hub_ep, anchor: hub}
+      queries:
+        impact:
+          hub: {importance: normal, nodes: [{node: leak_sensor, importance: normal}]}
+          water_leak: {importance: critical, nodes: []}

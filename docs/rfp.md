@@ -4,11 +4,11 @@ Design of record for this library. A Home Assistant integration is the first con
 
 | | |
 | --- | --- |
-| Version | 0.5 |
-| Date | 2026-09-24 |
-| Status | Draft for review, with ADRs 0024 to 0030 accepted. A first engine and policy pass every fixture. Nothing is released until the types, stories, and scenarios are accepted. |
+| Version | 0.6 |
+| Date | 2026-09-25 |
+| Status | Draft for review, with ADRs 0024 to 0030 accepted and ADRs 0031 and 0032 proposed. A first engine and policy pass every fixture. Nothing is released until the types, stories, and scenarios are accepted. |
 | Decisions | [docs/adr](adr/README.md) |
-| Changes from 0.4 | Section 17 |
+| Changes from 0.5 | Section 18 |
 
 ## Purpose
 
@@ -39,6 +39,8 @@ Two kinds of trouble are not component failures:
 - An operation that did not do what it was told. The garage door was told to close and is still open.
 - Maintenance debt with no symptom. Ten months of updates waiting on the AI box.
 
+A third kind of trouble is not a failure at all. A situation is a state of the world the owner has asked to hear about while the house works: the garage open at night, water on the floor, the front door left open. The owner's own rules decide when one holds. What happens next is the same problem as a failure: one alert, updated in place, sent to the right person at the right loudness, and explained.
+
 The library answers these questions for any system that can be drawn as dependencies:
 
 - What is true of this node, from its own checks?
@@ -46,6 +48,7 @@ The library answers these questions for any system that can be drawn as dependen
 - Who should be told, how loudly, and when?
 - Why is this function not working? Is this set of functions ready?
 - What is not being watched at all?
+- Which situations that the owner asked about hold now?
 
 ## 2. Product
 
@@ -70,7 +73,7 @@ A watchdog outside Home Assistant is a required part of any deployment. The libr
 
 ### In scope
 
-The house failed to do its job, is about to, or is accumulating maintenance risk. That covers components, operations, and maintenance.
+The house failed to do its job, is about to, or is accumulating maintenance risk. That covers components, operations, and maintenance. It also covers situations the owner asked to hear about (ADR 0031).
 
 - A directed acyclic graph of nodes and hard dependencies. Functions are nodes.
 - Checks registered with the node that owns them.
@@ -83,13 +86,15 @@ The house failed to do its job, is about to, or is accumulating maintenance risk
 - Queries: explain, impact, readiness, coverage, rollup.
 - The attention policy, as a pure module configured with data.
 - Snapshot and restore of all state.
+- Situation alerts, as edgeless nodes whose checks are reported from outside the library (section 3, ADRs 0031 and 0032).
 
 ### Out of scope for the first version
 
 - Learned reporting rhythms, anomaly detection, learned baselines.
 - Predictions inside the library. A check may report a projected deadline. The library does not compute one.
 - Redundancy groups. The edge carries the field, and version 1 rejects it.
-- Situation alerts: the garage open at night, a water leak, a door unlocked while away. The world is in a state the owner does not like; the house has not failed. These are security and safety alerting. They may share the policy later.
+- Evaluating conditions. The library never decides that a situation holds: a reporter outside it does, and sends an observation (ADR 0031).
+- Serving as a life-safety alarm. Smoke, carbon monoxide, and flood alarms keep their own alarm path. The library adds a way to hear about them.
 - Automatic remediation. An episode may carry a suggested action. The library never runs one.
 - Notification transport, dashboards, and discovery. These belong to the integration.
 
@@ -122,6 +127,21 @@ A node is one capability: one thing that either works or does not, as its depend
 
 The engine cannot apply these tests, because it never reads labels. The catalog applies them, and the integration checks them with a lint.
 
+### Situations
+
+A situation is a node with no dependencies, which nothing depends on (ADR 0032). By convention its `kind` is `situation` and its `category` label is `situation`. It is tied to its source, such as the door sensor, by a label or a view, never by an edge. Its one check is reported from outside the library (ADR 0031):
+
+| Status | Meaning |
+| --- | --- |
+| `fail` | The situation holds |
+| `pass` | It has ended |
+| `unknown` | The reporter cannot tell. This never clears a situation |
+| `warn` | Optional: a lesser form of the same situation |
+
+The reporter owns the condition's timing, so the check's `raise_hold` is zero, and so is its `clear_hold` unless the reporter has no hysteresis. `ttl` is usually `None`, because a stateful reporter does not repeat an unchanged state. `unknown_hold` is required as always.
+
+The existing rules then keep situations and equipment apart. Nothing gates, mutes, or records a situation, because it has no dependency. It never coalesces, because it shares no dependency. It mutes nobody and its impact is empty, so its importance is its own. A quiet window scoped to a controller does not cover it. Readiness never reads it, because no function depends on it. The integration's lint rejects any edge to or from a situation node: an edge to its sensor would let a dead sensor mute it, and an edge from a function would block readiness because a door is open.
+
 ## 4. Boundary
 
 | Piece | Owns |
@@ -131,7 +151,7 @@ The engine cannot apply these tests, because it never reads labels. The catalog 
 | Conventions | Shared names, never behavior |
 | Catalog (integration) | Which checks exist, which node each lives on (section 3), what their reasons mean, remedies and links |
 | Adapter (integration) | Which nodes exist, how observations are produced, where deliveries go |
-| Check author | How a check decides its status and reason |
+| Check author | How a check decides its status and reason, including whether a situation holds |
 
 A type is fixed only when the engine or the policy compares, orders, or escalates it. Everything the library only carries is an open string with conventions. See ADR 0004.
 
@@ -153,9 +173,9 @@ Worst-of order is `fail`, then `warn`, then `unknown`, then `pass`. `unknown` ou
 
 | Field | Examples | Where the vocabulary lives |
 | --- | --- | --- |
-| Node `kind` | `host`, `service`, `integration`, `device`, `function` | Integration |
+| Node `kind` | `host`, `service`, `integration`, `device`, `function`, `situation` | Integration |
 | Observation `reason` | `unreachable`, `auth_required`, `battery_low`, `capacity_low`, `update_pending`, `command_failed` | `health_tree.conventions`, extended by the catalog |
-| Label `category` | `fault`, `maintenance`, `operation` | Conventions |
+| Label `category` | `fault`, `maintenance`, `operation`, `situation` | Conventions |
 | Label `actionable_by` | `self`, `human` | Conventions |
 | Other labels | `area`, `site`, `integration` | Integration |
 | Annotations | `remedy`, `link`, `summary` | Catalog |
@@ -348,6 +368,8 @@ Within each reason the first match wins, so order carries meaning:
 - A reason is `unknown` only when it is stale. `[fail, unknown]` pages when a critical sensor goes quiet.
 - Each reason is matched on its own, and the loudest result wins. A failed command on a lock whose battery is low still pages, although the maintenance rule matches the battery reason first.
 
+Situations need no new policy fields. In this example a `high` or `critical` situation that reports `fail` is `urgent`, and a `normal` or `low` one is `notify` and waits for quiet hours. A rule that matches `category: situation` routes them separately, and it must sit above the rules it should win against.
+
 ## 8. Interface and queries
 
 The engine and the policy are state machines with no I/O (ADR 0003). The names below are the shape of the interface, not final signatures.
@@ -413,6 +435,7 @@ Written against this house. Node names are for reading. The fixtures use ids. Ea
 7. **An Eero node goes down.** The backyard speakers and the backyard music function depend on the backyard Eero node through a declared edge. One episode opens, on the Eero node. Impact lists backyard music.
 8. **The garage door does not close.** Close is commanded at 23:10. At 23:10:30 the door is still open. The command check reports `command_failed` / `fail`, labelled `category: operation`, and the garage function has `high` importance. No dependency is in doubt, so the settle gate does not hold it. The policy delivers it at 23:10:30, through quiet hours, to whoever is home. The episode resolves when the door closes.
 9. **The Insteon controller chokes.** The controller is `warn`, and its episode is open. Thirty Insteon devices report `command_failed` within a minute. They are recorded on the controller's episode, which gains the reason `dependents_failing`. One episode, not thirty-one. As devices recover, they leave it. If two are still failing after the rest recover, each gets its own episode: those two are broken on their own.
+10. **The front door is left open overnight.** The door opens at 23:04. The owner's Home Assistant rule holds when the door has been open for three hours between 22:00 and 07:00, so its entity turns on at 02:04. The situation node is `high`, labelled `category: situation`, with no edges. One episode opens at 02:04, with an empty impact, and the policy delivers it at once, through quiet hours: the front door has been open since 23:04. At 02:10 the Z-Wave controller drops. The door sensor is recorded on the controller's episode, and the rule's entity turns `unavailable`, so the situation reports `unknown`. The situation's episode stays open, and nothing is sent. At 02:25 its `unknown_hold` ends, the reason becomes `stale`, and it pages again: the house can no longer tell whether the door is still open. At 02:30 the controller is back and the rule holds again, which is a silent update. The controller's episode resolves at 02:30:30, before quiet hours end, so it is never delivered. At 06:50 the owner closes the door, and the situation resolves with a silent resolution.
 
 ## 10. Scenarios the library must pass
 
@@ -491,6 +514,10 @@ Each is tagged with its area.
 58. **Queries.** Two roots fail and record one shared device. A view containing all three counts two own episodes and one recorded failure. Overlapping groups do not change those episodes or duplicate a node inside one group. A quieted failure still counts as `fail`, with no episode membership. Unwatched nodes remain `unknown` in the counts.
 59. **Queries.** Three failing siblings coalesce on a passing controller. Its rollup row is `pass` with one own episode, and the three siblings are recorded failures. A separately established child episode keeps its own-episode classification when a later parent failure inhibits it.
 60. **Queries.** Coverage distinguishes no checks, never observed, expired but not yet stale, and stale after the unknown hold. Explicit unknown reports are observed, evidence-only checks are included, and never-observed checks can also be stale. Quiet windows do not hide gaps, restart preserves them, and fresh observations remove them. Rejoin resets stale timing consistently with scenario 37.
+61. **Engine.** A water-leak situation is `critical`. Its source sensor depends on a hub, and a quiet window covers the hub and its dependents. Inside the window the hub turns `unknown` and the situation reports `fail`. The situation's episode opens at once: the window does not cover it, and the hub does not gate it. The hub and the sensor then fail. When the window ends, the hub's episode opens with the sensor recorded, and the situation's episode is untouched. Its impact is empty, and its importance stays `critical`.
+62. **Engine.** A situation's episode is open. After a restart with startup grace, the episode continues with the same id. The reporter's placeholder is `unknown`, which updates the episode and does not resolve it. The reporter reports `fail` again, which is an update, not a new opening. Only `pass` resolves it.
+63. **Engine and queries.** Two situations share an area and a source label, and both hold in one call, with `coalesce_count` 2. Two root episodes open, and no group. A `high` function that depends on the source sensor stays `ready`.
+64. **Policy.** A `normal` situation opens at 23:30 and is delivered as `notify` at 07:00, when quiet hours end. A `critical` situation at 03:00 is delivered at once as `urgent`.
 
 ## 11. Home Assistant integration, later
 
@@ -519,6 +546,7 @@ Not part of this library. Recorded so the boundary stays visible. It is a separa
 - A heartbeat to the outside watchdog.
 - The settings UI owns the durations. Starting values, which the owner can change: `settle` 2 minutes, `rejoin_grace` 1 minute, `coalesce_count` 3, `coalesce_window` 60 seconds, `batch` 30 seconds, startup grace 2 minutes. The catalog sets `raise_hold`, `clear_hold`, `ttl`, and `unknown_hold` per check. Where it has none, the UI offers fallbacks the owner can change: `clear_hold` 2 minutes and `unknown_hold` 15 minutes.
 - Create or restore the engine when Home Assistant reports it has started, not when the integration loads, so startup grace covers the settling period.
+- Situations (ADRs 0031 and 0032). The owner names an alert and binds it to one Home Assistant entity that the owner builds: a template, a binary sensor, or a helper kept by an automation. `on` is `fail`, `off` is `pass`, and `unavailable` or `unknown` is `unknown`. The integration ships no condition builder. The bound entity must turn `unavailable`, not `off`, when its source is unavailable, or a dead sensor reads as a clear. The integration warns when a bound template declares no availability. Its lint rejects edges to or from a situation node. Maintenance never uses the `all` scope.
 
 ### Observation proofs
 
@@ -608,3 +636,10 @@ The library is done when:
 - Scenario 35 has a coverage fixture. Scenarios 57 to 60 cover potential impact, duplicate-free view counts, coalesced and independent episodes, and evidence gaps across expiry, restart, and rejoin.
 - Queries read evaluated state without advancing time or modifying snapshots. Episode lifecycle and policy are unchanged.
 - Fixture steps can register and remove nodes at runtime and shelve episodes (ADR 0030). Scenarios 7, 21, and 32 and stories 2, 6, 7, and 9 have fixtures, and story 4's fixture also covers scenarios 18 and 33. Every story and scenario now has a fixture, except scenarios 12 and 26 (rejected registrations) and 38 (id ordering), which unit tests cover.
+
+## 18. Changes from 0.5
+
+- Situation alerts are in scope. The library never evaluates a condition: a reporter outside it sends an observation, and `unknown` never clears (ADR 0031). Evaluating conditions and serving as a life-safety alarm are out of scope.
+- A situation is an edgeless node with `kind` and `category` `situation` by convention. Existing rules keep it out of inhibition, the settle gate, coalescing, scoped quiet windows, and readiness. The engine and policy do not change (ADR 0032).
+- Section 1 names situations, section 3 describes them, and the conventions table lists `situation`. Section 11 describes binding a situation to a Home Assistant entity.
+- Story 10 and scenarios 61 to 64 are added, with fixtures. They pass against the current engine and policy.

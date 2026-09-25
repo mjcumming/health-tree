@@ -770,10 +770,12 @@ def _deliveries(
             continue
         _reject_unknown(
             delivery,
-            {"loudness", "digest", "episode", "to", "resolution"},
+            {"loudness", "digest", "episode", "to", "resolution", "silent"},
             path,
             problems,
         )
+        if "silent" in delivery and not isinstance(delivery["silent"], bool):
+            problems.append(f"{path}.silent must be true or false")
         if "resolution" in delivery:
             if delivery["resolution"] not in _RESOLUTION:
                 problems.append(f"{path}.resolution is not a resolution")
@@ -781,6 +783,8 @@ def _deliveries(
                 problems.append(
                     f"{path}: a resolution delivery has no loudness or digest"
                 )
+            if "silent" in delivery:
+                problems.append(f"{path}: a resolution delivery is always silent")
             _string(delivery.get("to"), f"{path}.to", problems)
         elif delivery.get("loudness") not in _LOUDNESS:
             problems.append(f"{path}.loudness is not a loudness")

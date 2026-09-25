@@ -1,0 +1,55 @@
+id: scenario-62-situation-survives-restart
+title: An active situation keeps its episode across a restart and clears only on pass
+covers: [scenario-62]
+start: 2026-09-25T01:00:00Z
+settings:
+  settle: 2m
+  rejoin_grace: 1m
+  startup_grace: 2m
+  coalesce_count: 3
+  coalesce_window: 60s
+graph:
+  - id: garage_open_at_night
+    kind: situation
+    labels:
+      category: situation
+    checks:
+      - {id: rule, raise_hold: 0s, clear_hold: 0s, ttl: null, unknown_hold: 15m}
+steps:
+  - at: 2026-09-25T01:03:00Z
+    ingest:
+      - {node: garage_open_at_night, check: rule, status: fail, reason: garage_open}
+    expect:
+      bind:
+        garage_ep: {opened: garage_open_at_night}
+      events:
+        - {opened: {anchor: garage_open_at_night, episode: $garage_ep, reasons: [garage_open]}}
+  - at: 2026-09-25T01:10:00Z
+    restart: true
+    expect:
+      events: []
+      open:
+        - {episode: $garage_ep, anchor: garage_open_at_night}
+  - at: 2026-09-25T01:11:00Z
+    ingest:
+      - {node: garage_open_at_night, check: rule, status: unknown, reason: restored_placeholder}
+    expect:
+      events:
+        - {updated: {episode: $garage_ep, status: unknown, reasons: []}}
+      open:
+        - {episode: $garage_ep, anchor: garage_open_at_night}
+  - at: 2026-09-25T01:13:00Z
+    ingest:
+      - {node: garage_open_at_night, check: rule, status: fail, reason: garage_open}
+    expect:
+      events:
+        - {updated: {episode: $garage_ep, status: fail, reasons: [garage_open]}}
+      open:
+        - {episode: $garage_ep, anchor: garage_open_at_night}
+  - at: 2026-09-25T01:40:00Z
+    ingest:
+      - {node: garage_open_at_night, check: rule, status: pass, reason: garage_closed}
+    expect:
+      events:
+        - {resolved: {episode: $garage_ep, resolution: cleared}}
+      open: []

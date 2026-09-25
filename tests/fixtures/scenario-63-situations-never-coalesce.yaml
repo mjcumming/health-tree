@@ -1,0 +1,46 @@
+id: scenario-63-situations-never-coalesce
+title: Situations that share an area never coalesce, and never change readiness
+covers: [scenario-63]
+start: 2026-09-25T22:00:00Z
+settings:
+  settle: 2m
+  rejoin_grace: 1m
+  startup_grace: 0s
+  coalesce_count: 2
+  coalesce_window: 60s
+graph:
+  - id: door_sensor
+    kind: device
+    labels: {area: entry}
+    checks:
+      - {id: fresh, raise_hold: 0s, clear_hold: 30s, ttl: 6h, unknown_hold: 15m}
+  - id: entry_lighting
+    kind: function
+    importance: high
+    depends_on: [door_sensor]
+  - id: front_door_unlocked_away
+    kind: situation
+    labels: {category: situation, area: entry, source: door_sensor}
+    checks:
+      - {id: rule, raise_hold: 0s, clear_hold: 0s, ttl: null, unknown_hold: 15m}
+  - id: front_door_open_overnight
+    kind: situation
+    labels: {category: situation, area: entry, source: door_sensor}
+    checks:
+      - {id: rule, raise_hold: 0s, clear_hold: 0s, ttl: null, unknown_hold: 15m}
+steps:
+  - at: 2026-09-25T22:00:00Z
+    ingest:
+      - {node: door_sensor, check: fresh, status: pass, reason: fresh}
+      - {node: front_door_unlocked_away, check: rule, status: fail, reason: unlocked_while_away}
+      - {node: front_door_open_overnight, check: rule, status: fail, reason: door_open}
+    expect:
+      bind:
+        unlocked_ep: {opened: front_door_unlocked_away}
+        open_ep: {opened: front_door_open_overnight}
+      events:
+        - {opened: {anchor: front_door_unlocked_away, episode: $unlocked_ep, form: root, reasons: [unlocked_while_away]}}
+        - {opened: {anchor: front_door_open_overnight, episode: $open_ep, form: root, reasons: [door_open]}}
+      queries:
+        readiness:
+          entry_lighting: {answer: ready, names: []}

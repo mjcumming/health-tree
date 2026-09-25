@@ -71,12 +71,17 @@ def test_checked_in_fixtures_match_the_schema() -> None:
         "scenario-57-potential-impact.yaml",
         "scenario-58-view-rollup.yaml",
         "scenario-59-group-rollup.yaml",
+        "scenario-61-situation-outside-the-cause-graph.yaml",
+        "scenario-62-situation-survives-restart.yaml",
+        "scenario-63-situations-never-coalesce.yaml",
+        "scenario-64-situation-waits-for-quiet-hours.yaml",
         "story-02-detector-hangs.yaml",
         "story-04-battery-digest.yaml",
         "story-06-ai-box.yaml",
         "story-07-eero-node-down.yaml",
         "story-08-garage-door.yaml",
         "story-09-insteon-controller-chokes.yaml",
+        "story-10-front-door-open-overnight.yaml",
     ]
 
 
@@ -299,6 +304,7 @@ def test_schema_rejects_bad_episode_update_fields(
         pytest.param({"resolution": "gone"}, "not a resolution", id="bad-resolution"),
         pytest.param({"loudness": "urgent"}, "no loudness or digest", id="noisy-clear"),
         pytest.param({"digest": "morning"}, "no loudness or digest", id="digest-clear"),
+        pytest.param({"silent": True}, "always silent", id="silent-clear"),
         pytest.param({"to": ""}, "non-empty string", id="missing-recipient"),
     ],
 )
@@ -310,6 +316,15 @@ def test_schema_rejects_bad_resolution_deliveries(
     document = yaml.safe_load((FIXTURES / filename).read_text(encoding="utf-8"))
     document["steps"][3]["expect"]["deliveries"][1].update(change)
     with pytest.raises(FixtureSchemaError, match=message):
+        validate_fixture(document, filename=filename)
+
+
+def test_schema_rejects_a_non_boolean_silent() -> None:
+    """`silent` says whether a notification replaces an earlier one quietly."""
+    filename = "story-10-front-door-open-overnight.yaml"
+    document = yaml.safe_load((FIXTURES / filename).read_text(encoding="utf-8"))
+    document["steps"][1]["expect"]["deliveries"][0]["silent"] = "no"
+    with pytest.raises(FixtureSchemaError, match="silent must be true or false"):
         validate_fixture(document, filename=filename)
 
 

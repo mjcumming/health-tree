@@ -1,0 +1,133 @@
+id: story-10-front-door-open-overnight
+title: The front door is left open overnight
+covers: [story-10]
+start: 2026-09-24T22:00:00Z
+settings:
+  settle: 2m
+  rejoin_grace: 1m
+  startup_grace: 0s
+  coalesce_count: 3
+  coalesce_window: 60s
+policy:
+  batch: 30s
+  recipients:
+    michael:
+      channels: [phone]
+      quiet_hours: "22:30-07:00"
+  digests:
+    morning:
+      at: "08:00"
+      to: michael
+  rules:
+    - match: {category: operation, importance: [high, critical]}
+      loudness: urgent
+      to: michael
+    - match: {status: warn, due_within: 24h}
+      loudness: notify
+      to: michael
+    - match: {category: maintenance}
+      loudness: digest
+      digest: morning
+      remind_every: 7d
+      escalate_after: 30d
+    - match: {status: [fail, unknown], importance: [high, critical]}
+      loudness: urgent
+      to: michael
+    - match: {status: fail}
+      loudness: notify
+      to: michael
+    - match: {}
+      loudness: digest
+      digest: morning
+graph:
+  - id: zwave
+    kind: integration
+    checks:
+      - {id: state, raise_hold: 0s, clear_hold: 30s, ttl: null, unknown_hold: 15m}
+  - id: door_sensor
+    kind: device
+    depends_on: [zwave]
+    checks:
+      - {id: fresh, raise_hold: 0s, clear_hold: 30s, ttl: 6h, unknown_hold: 15m}
+  - id: front_door_open_overnight
+    kind: situation
+    importance: high
+    labels:
+      category: situation
+      source: door_sensor
+    checks:
+      - {id: rule, raise_hold: 0s, clear_hold: 0s, ttl: null, unknown_hold: 15m}
+steps:
+  - at: 2026-09-24T22:00:00Z
+    ingest:
+      - {node: zwave, check: state, status: pass, reason: loaded}
+      - {node: door_sensor, check: fresh, status: pass, reason: fresh}
+      - {node: front_door_open_overnight, check: rule, status: pass, reason: door_closed}
+    expect:
+      events: []
+      deliveries: []
+  - at: 2026-09-25T02:04:00Z
+    ingest:
+      - {node: door_sensor, check: fresh, status: pass, reason: fresh}
+      - {node: front_door_open_overnight, check: rule, status: fail, reason: door_open, message: Front door open since 23:04}
+    expect:
+      bind:
+        door_ep: {opened: front_door_open_overnight}
+      events:
+        - {opened: {anchor: front_door_open_overnight, episode: $door_ep, importance: high, reasons: [door_open]}}
+      deliveries:
+        - {loudness: urgent, episode: $door_ep, to: michael, silent: false}
+      queries:
+        impact:
+          front_door_open_overnight: {importance: high, nodes: []}
+  - at: 2026-09-25T02:10:00Z
+    ingest:
+      - {node: zwave, check: state, status: fail, reason: controller_unreachable}
+      - {node: door_sensor, check: fresh, status: fail, reason: unreachable}
+      - {node: front_door_open_overnight, check: rule, status: unknown, reason: source_unavailable}
+    expect:
+      bind:
+        zwave_ep: {opened: zwave}
+      events:
+        - {opened: {anchor: zwave, episode: $zwave_ep, recorded: [door_sensor]}}
+        - {updated: {episode: $door_ep, status: unknown, reasons: []}}
+      deliveries: []
+      open:
+        - {episode: $door_ep, anchor: front_door_open_overnight}
+        - {episode: $zwave_ep, anchor: zwave}
+  - at: 2026-09-25T02:25:00Z
+    expect:
+      events:
+        - {updated: {episode: $door_ep, status: unknown, reasons: [stale]}}
+      deliveries:
+        - {loudness: urgent, episode: $door_ep, to: michael, silent: false}
+  - at: 2026-09-25T02:30:00Z
+    ingest:
+      - {node: zwave, check: state, status: pass, reason: loaded}
+      - {node: door_sensor, check: fresh, status: pass, reason: fresh}
+      - {node: front_door_open_overnight, check: rule, status: fail, reason: door_open, message: Front door open since 23:04}
+    expect:
+      events:
+        - {updated: {episode: $door_ep, status: fail, reasons: [door_open]}}
+      deliveries:
+        - {loudness: urgent, episode: $door_ep, to: michael, silent: true}
+  - at: 2026-09-25T02:30:31Z
+    expect:
+      events:
+        - {resolved: {episode: $zwave_ep, resolution: cleared}}
+      deliveries: []
+      open:
+        - {episode: $door_ep, anchor: front_door_open_overnight}
+  - at: 2026-09-25T06:50:00Z
+    ingest:
+      - {node: front_door_open_overnight, check: rule, status: pass, reason: door_closed}
+    expect:
+      events:
+        - {resolved: {episode: $door_ep, resolution: cleared}}
+      deliveries:
+        - {episode: $door_ep, to: michael, resolution: cleared}
+      open: []
+  - at: 2026-09-25T07:00:00Z
+    expect:
+      events: []
+      deliveries: []

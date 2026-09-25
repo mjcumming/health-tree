@@ -376,6 +376,8 @@ Use native HA [options flows](https://developers.home-assistant.io/docs/core/int
 
 These are recommendations for review, not accepted release assignments.
 
+Section 16 records decisions for the first release that would replace the "First usable release" row below.
+
 | Phase | Proposed scope |
 | --- | --- |
 | Prove inputs | Real detector, battery-freshness, and command-completion traces; demonstrate notification and watchdog paths |
@@ -573,3 +575,172 @@ Respect HA's [log-on-transition guidance](https://developers.home-assistant.io/d
 - A bad rule-reporting action returns the native style of actionable validation error and leaves the prior configuration intact.
 
 The practical design rule is: **retain HA's original state and correction path; add cause, consequences, episode history, coverage, and attention decisions around it.** Changes to library semantics still require the RFP and fixtures; this section establishes integration and UI direction.
+
+## 16. The first release: decisions and scope
+
+Proposed 2026-09-25. Michael answered the decision table the same day; his answers are recorded below, and all twelve are settled. Answer 1 contradicted RFP 0.5 section 2. RFP 0.6 and ADRs 0031 and 0032, both proposed, now carry it; it takes effect when those are accepted. Until then everything here is direction for the integration, not library behavior. If accepted, this section replaces the "First usable release" row in section 13 and closes the matching items in "Still to argue" and in section 13's next decisions.
+
+Why this section exists: section 13's first release contains nearly every surface in this worksheet, which contradicts its own ten-minute setup hypothesis. This section keeps what makes the nine stories in RFP section 9 visible and explainable, and settles the model questions that would be expensive to change later.
+
+### Decision 1: situation alerts are in, but HA rules detect them
+
+Situation alerts ship in the first release. Homeostatic does not detect them. An HA rule does: a template, a problem-class binary sensor, or an automation that maintains such an entity. Homeostatic manages the problem from there: identity, episode, policy, reminders, shelving, and explanation.
+
+This drops two things from section 14:
+
+- The simple "create alert" form, with its state, duration, schedule, and threshold patterns.
+- Action-only reporting from automations, with producer leases and ordering rules.
+
+What remains is a binding from a named alert to one HA entity:
+
+| Entity state | Homeostatic reads it as |
+| --- | --- |
+| `on` | Active |
+| `off` | Clear |
+| `unavailable` or `unknown` | Unknown: never clear, and the problem stays open |
+
+Consequences:
+
+- The rule owns the condition, its timing, and its schedule. "Open three hours and it is 2 a.m." lives in the template. HA's own restart behavior for `for` and `delay_on` belongs to that rule, not to Homeostatic. The alert detail must say so plainly, not imply continuity Homeostatic did not observe.
+- A stateful entity survives a restart. Homeostatic reconciles from current state and needs no lease or replay logic.
+- Situation nodes stay outside the cause graph. They are not inhibited by equipment failures, they do not affect readiness, and they are not coalesced by shared area or source (section 14, "Share attention").
+- Equipment maintenance never suppresses a situation. Situations follow only their own explicit quiet scope.
+- The rest of section 14's walkthroughs reduce to the ones about unknown handling, two doors under one rule, restart reconciliation, and maintenance scope.
+
+### Decision 2: one rule model for checks, special cases, and exclusions
+
+The catalog assigns checks through rules that match node attributes, as in Icinga apply rules. There is no separate per-entity override system. A special case is a rule with a narrow match.
+
+- **Match fields, from the start:** domain, `device_class`, integration (config entry), device, entity, area, floor, and label. Matching keys on stable source ids, never display names or `entity_id` strings (section 6).
+- **Actions:** attach checks with their parameters, or exclude. Exclusion covers a whole integration, a device, or one check, and so replaces the three-level inherit/include/exclude tree in section 6.
+- **Evaluation:** attach rules are additive, and an exclude always wins over an attach, whatever their order. That makes the result independent of rule order. Otherwise rule order would carry meaning twice: once here and again in the policy, where it already does.
+- **Area and label match now.** A preview before a move was the reason to wait, and it isn't possible anyway, because devices are moved in HA's own UI, not in Homeostatic. So Homeostatic reports afterwards: when a reconcile changes a node's checks, it records "checks changed because this device moved to Garage", and the change appears in the device's recent history.
+- Every check shows which rule attached it. Every exclusion shows which rule excluded it. That is `explain` for the configuration.
+- An excluded capability that a monitored function requires stays an explicit, unwatched requirement (section 6). Exclusion never makes readiness green.
+- Health signal for the configuration itself: many single-entity rules mean a broader rule is missing.
+
+The shipped rule pack is the default configuration. The owner adds, edits, and disables rules. A live "matches N nodes" preview while editing a rule is part of doing this correctly the first time, because the owner is editing a rule in Homeostatic there and a preview is possible.
+
+### Decision 3: enrollment is an integration setting
+
+The default belongs in the integration's config and options flow, like any HA integration setting:
+
+- Watch everything the rule pack supports, with passive checks only. Active probes start only when a rule that names them is enabled.
+- Future devices inherit, because rules match them automatically.
+- Notifications are off until the owner activates them in the flow.
+
+### Decision 4: no per-check timing overrides
+
+Catalog values per check, plus the eight house settings in section 1. A wrong value is a catalog bug. Revisit after real traces.
+
+### Decision 5: importance is editable on functions
+
+Required in the first release. Without it the policy cannot tell the garage from backyard music.
+
+### Decision 6: Homeostatic manages notification information; consumers deliver it
+
+Michael's direction: Homeostatic manages what there is to say and when. Consumers decide how it reaches people. This removes transport binding from the integration: no notify-service mapping, channel tests, or per-transport capability handling (section 9, "Recipients and transport").
+
+Proposed boundary:
+
+| Homeostatic owns | Consumers own |
+| --- | --- |
+| The problem: episode identity, cause, impact, evidence, remedy | Which device, app, or service carries the message |
+| Loudness: `record`, `digest`, `notify`, `urgent` | Formatting, critical or time-sensitive push, TTS, sound |
+| Timing: batching, quiet hours, digests, reminders, escalation | Mapping a recipient id to real people or devices |
+| The message content, led by the function | Replacing or clearing a phone notification by tag |
+
+Timing stays in Homeostatic because it needs episode state that an automation does not have. A reminder after two hours, a digest at 07:00, or holding an update because the episode already paged: all of these would otherwise be rebuilt, badly, in every consumer. This keeps ADR 0010: the attention policy stays in the library, with opaque recipient and channel ids, and the policy is edited as YAML only.
+
+Output: one HA event per delivery, for example `homeostatic_notification`, carrying:
+
+- the episode id, usable as a notification tag
+- the action: open, update, remind, escalate, resolve, or digest
+- loudness and recipient id
+- title, message, function, cause, and a link to the problem
+
+The same information stays readable from entities and the problem view. The integration ships a blueprint that sends these events to the companion app: the episode id as the tag, critical for `urgent`, and a clear on resolve. That makes the default setup work without the owner writing an automation, while anyone can route events elsewhere.
+
+Consequences:
+
+- Delivery outcomes are unknown to Homeostatic. The problem view can say "delivery requested at 02:40", never "delivered" or "read" (section 9 already requires this distinction).
+- A missing consumer is silent failure. Setup must verify that at least one automation handles the event, and coverage reports "no consumer for `urgent`" as a gap.
+- The watchdog's alert path cannot be an HA automation, because HA may be the thing that died (section 11).
+
+### Decision 7: activation sends one summary
+
+When notifications are activated with problems already open, send one summary of what is open, then deliver live. Never replay individual openings. Reminder and escalation clocks start at activation. This needs an integration scenario.
+
+### Decision 8: edges are confirmed per function
+
+Candidate edges from automations are suggested while defining a function. There is no global queue. Automations outside any function contribute no edges.
+
+### What the first release contains
+
+| Area | In the first release | Later |
+| --- | --- | --- |
+| Enrollment | Config and options flow; watch all supported, passively; notifications off until activated | |
+| Rules | Shipped pack; add, edit, disable; all match fields; include and exclude; live match preview; rule provenance on every check | |
+| Timing | Eight house settings; catalog values per check | Per-check overrides |
+| Functions | Name, importance, required capabilities; per-function edge suggestions; declared external edges | |
+| Situation alerts | Bind a named alert to an HA entity | A native condition builder: not planned |
+| Views | Blocked functions, open problems, maintenance due, coverage as counts | Saved readiness views |
+| Problem detail | Cause, affected functions, evidence, remedy, who heard and why, why not | Full decision trace |
+| Entities | One readiness entity per function: ready, degraded, blocked, unknown | |
+| Repairs | Link HA's own issues; create ours only when the owner can act | |
+| Policy | YAML with opaque recipient ids, validated, read-only explanation | Guided editor, if ever |
+| Delivery | `homeostatic_notification` events; a shipped companion-app blueprint; a coverage gap when no consumer handles `urgent` | Presence and sites |
+| Quiet controls | Shelve until a time; maintenance with an expiry | Early cancellation, acknowledgement |
+| Watchdog | Configured, heartbeat sent, externally verified | |
+| Continuity | Snapshot and restore; recently resolved problems; stale label on lost connection | Full history journal and export |
+
+### The notification is the primary screen
+
+Most of the owner's contact with Homeostatic is a message on a phone. Design it before the panel.
+
+- Lead with the function, then the cause: "Basement motion lighting is blocked. The Frigate host is unreachable."
+- Add one line of consequence: "4 functions affected."
+- Tapping opens that problem, not the landing screen.
+- Every event carries the episode id, so the blueprint replaces the earlier message where the transport supports tags. Otherwise updates are labeled as updates and never re-announce the problem.
+- A resolution notice names what recovered and what is still open.
+- A situation alert reads as a situation, not a failure: "Front door open since 23:04."
+- The maintenance digest is one message grouped by action, such as "Replace batteries: 3".
+
+Acceptance: write each of the nine stories, plus one situation alert, as the exact phone text from opening to resolution. Review those texts before panel work starts.
+
+### Glance, detail, advanced
+
+| Layer | Where | Contents |
+| --- | --- | --- |
+| Glance | Landing screen, notification | Function or alert, state, cause, since when, next action |
+| Detail | One tap | Evidence, affected functions, who heard and why, remedy, shelve and maintenance |
+| Advanced | Expanded on request | Holds and deadlines, raw observations, timestamps, rule trace, absorbed members, edge and rule provenance |
+
+Nothing in the advanced layer may be needed to answer "what is broken, and what do I do?"
+
+### Library and RFP work that comes first
+
+1. ~~An RFP change and ADR for decision 1.~~ Drafted: RFP 0.6, ADRs 0031 and 0032, story 10, and scenarios 61 to 64, all passing against the current engine.
+2. An ADR for a supported read model (section 12).
+3. ~~The `impact`, `coverage`, and `rollup` queries.~~ Done: merged in PR #4 (ADR 0029).
+4. Stable source ids, with rules and declared edges stored as introspectable data.
+5. The observation proofs from real traces.
+
+### Decisions
+
+| # | Decision | Answer |
+| --- | --- | --- |
+| 1 | Situation alerts in the first release | Yes, detected only by HA rules bound as entities. RFP 0.6, ADRs 0031 and 0032 (proposed) |
+| 2 | Catalog as attribute-matching rules | Yes. Special cases are narrow rules |
+| 3 | Rule match fields | All of them, now. Report changes after moves |
+| 4 | Enrollment default | Integration config: watch all supported, passive, notifications off until activated |
+| 5 | Exclusion granularity | Full, from the start, as exclude rules |
+| 6 | Per-check timing overrides | Not in the first release |
+| 7 | Importance editing | First release, on functions |
+| 8 | Notifications | Homeostatic owns content, loudness, and timing; consumers deliver through an HA event and a shipped blueprint. Policy is YAML only |
+| 9 | Activation with open problems | One summary, then live delivery |
+| 10 | Candidate edges | Per function, no global queue |
+| 11 | Rule evaluation | Attach is additive; exclude always wins; order does not matter |
+| 12 | Maintenance and situations | Equipment maintenance never suppresses a situation |
+
+Next, mark the matching rows in sections 1 to 3 **v1** or **later**, and close the items in "Still to argue".

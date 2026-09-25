@@ -1,0 +1,77 @@
+id: scenario-64-situation-waits-for-quiet-hours
+title: A normal situation waits for quiet hours; a critical one pages through them
+covers: [scenario-64]
+start: 2026-09-25T23:00:00Z
+settings:
+  settle: 2m
+  rejoin_grace: 1m
+  startup_grace: 0s
+  coalesce_count: 3
+  coalesce_window: 60s
+policy:
+  batch: 30s
+  recipients:
+    michael:
+      channels: [phone]
+      quiet_hours: "22:30-07:00"
+  digests:
+    morning:
+      at: "08:00"
+      to: michael
+  rules:
+    - match: {category: maintenance}
+      loudness: digest
+      digest: morning
+    - match: {status: [fail, unknown], importance: [high, critical]}
+      loudness: urgent
+      to: michael
+    - match: {status: fail}
+      loudness: notify
+      to: michael
+    - match: {}
+      loudness: digest
+      digest: morning
+graph:
+  - id: garage_open_at_night
+    kind: situation
+    labels: {category: situation}
+    checks:
+      - {id: rule, raise_hold: 0s, clear_hold: 0s, ttl: null, unknown_hold: 15m}
+  - id: water_leak
+    kind: situation
+    importance: critical
+    labels: {category: situation}
+    checks:
+      - {id: rule, raise_hold: 0s, clear_hold: 0s, ttl: null, unknown_hold: 15m}
+steps:
+  - at: 2026-09-25T23:00:00Z
+    ingest:
+      - {node: garage_open_at_night, check: rule, status: pass, reason: garage_closed}
+      - {node: water_leak, check: rule, status: pass, reason: dry}
+    expect:
+      events: []
+      deliveries: []
+  - at: 2026-09-25T23:30:00Z
+    ingest:
+      - {node: garage_open_at_night, check: rule, status: fail, reason: garage_open}
+    expect:
+      bind:
+        garage_ep: {opened: garage_open_at_night}
+      events:
+        - {opened: {anchor: garage_open_at_night, episode: $garage_ep, importance: normal}}
+      deliveries: []
+  - at: 2026-09-26T03:00:00Z
+    ingest:
+      - {node: water_leak, check: rule, status: fail, reason: water_detected}
+    expect:
+      bind:
+        leak_ep: {opened: water_leak}
+      events:
+        - {opened: {anchor: water_leak, episode: $leak_ep, importance: critical}}
+      deliveries:
+        - {loudness: urgent, episode: $leak_ep, to: michael, silent: false}
+  - at: 2026-09-26T07:00:00Z
+    expect:
+      events: []
+      deliveries:
+        - {loudness: notify, episode: $garage_ep, to: michael, silent: false}
