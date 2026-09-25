@@ -4,6 +4,8 @@ All notable changes to this project are documented here. The format follows [Kee
 
 ## [Unreleased]
 
+## [0.1.0] - 2026-09-25
+
 ### Added
 
 - ADRs 0031 and 0032, accepted: situation alerts are in scope, reported from outside the library, and modeled as edgeless nodes. Story 10 and scenarios 61 to 64 have fixtures, and they pass against the current engine and policy.

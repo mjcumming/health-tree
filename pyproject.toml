@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "health-tree"
-version = "0.0.0"
+version = "0.1.0"
 description = "Platform-agnostic health across a dependency graph: checks, dependency-aware episodes, and an attention policy"
 readme = "README.md"
 requires-python = ">=3.14"
@@ -15,7 +15,7 @@ authors = [
 ]
 keywords = ["alerting", "dependencies", "health", "home-assistant", "monitoring", "root-cause"]
 classifiers = [
-  "Development Status :: 1 - Planning",
+  "Development Status :: 3 - Alpha",
   "Intended Audience :: Developers",
   "Operating System :: OS Independent",
   "Programming Language :: Python :: 3",
