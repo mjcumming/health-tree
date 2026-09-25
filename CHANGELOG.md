@@ -6,6 +6,8 @@ All notable changes to this project are documented here. The format follows [Kee
 
 ### Added
 
+- ADRs 0031 and 0032, proposed: situation alerts are in scope, reported from outside the library, and modeled as edgeless nodes. Story 10 and scenarios 61 to 64 have fixtures, and they pass against the current engine and policy.
+- Fixture delivery expectations can assert `silent`, to tell a second page from a silent update.
 - Public `impact`, `coverage`, and `rollup` queries with immutable result records and adapter-owned views. Query contracts and fixtures cover potential impact, evidence gaps, and counts without duplicate dependents (ADR 0029).
 - Fixture steps that register and remove nodes at runtime and shelve episodes (ADR 0030, accepted).
 - Fixtures for scenarios 7, 21, and 32 and stories 2, 6, 7, and 9. Every story and scenario now has a fixture, except scenarios 12, 26, and 38, which unit tests cover.
@@ -41,6 +43,7 @@ All notable changes to this project are documented here. The format follows [Kee
 
 ### Changed
 
+- RFP 0.6 moves situation alerts into scope. Evaluating conditions and serving as a life-safety alarm are out of scope. Engine and policy behavior are unchanged.
 - The Homeostatic UI worksheet adds section 16, decisions for the first release: situation alerts detected only by Home Assistant rules bound as entities (pending an RFP change), one attribute-matching rule model for checks and exclusions, enrollment as an integration setting, importance on functions, notification content and timing owned by Homeostatic with delivery left to Home Assistant consumers, and the notification designed before the panel. Library behavior is unchanged.
 - ADR 0029 is accepted: public query records and adapter-owned views.
 - Documented current Home Assistant error and repair conventions in the UI worksheet, with release-source references and proposed reuse of native setup, reauthentication, entity availability, Repairs, diagnostics, and action errors.

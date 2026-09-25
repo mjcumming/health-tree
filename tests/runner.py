@@ -750,7 +750,11 @@ class _Run:
         else:
             if not isinstance(delivery, Notification):
                 return [f"expected a notification, got {self._describe(delivery)}"]
-            actual = {"loudness": delivery.loudness.value, "digest": delivery.digest}
+            actual = {
+                "loudness": delivery.loudness.value,
+                "digest": delivery.digest,
+                "silent": delivery.silent,
+            }
         actual |= {
             "episode": delivery.episode_id,
             "to": delivery.recipient,
