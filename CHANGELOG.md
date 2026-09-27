@@ -4,6 +4,19 @@ All notable changes to this project are documented here. The format follows [Kee
 
 ## [Unreleased]
 
+## [0.4.0] - 2026-09-27
+
+### Added
+
+- Explicit policy acknowledgment with opt-in reminder/escalation suppression and restart persistence, plus early shelf and quiet-window cancellation (ADR 0034, scenarios 76 to 78).
+
+- Story 11 and its fixture: a dishwasher's low rinse aid reaches the morning digest as separate maintenance, leaves connectivity ready, and clears after a reported refill. Library behavior is unchanged.
+
+### Changed
+
+- The Home Assistant integration design defers generic log and traceback monitoring. Logs remain troubleshooting evidence unless a future source-specific check can define stable identity, opening, recovery, deduplication, and retention. Library behavior is unchanged.
+- Document acknowledgment, cancellation, and the current library interfaces in the README, and route Homeostatic UI documentation to its owning repository.
+
 ## [0.3.0] - 2026-09-25
 
 ### Added

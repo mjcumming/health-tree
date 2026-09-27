@@ -492,6 +492,7 @@ class Rule:
     digest: str | None = None
     remind_every: timedelta | None = None
     escalate_after: timedelta | None = None
+    require_acknowledgment: bool = False
 
     def __post_init__(self) -> None:
         """Give a digest rule its digest and a sending rule its recipients."""
@@ -502,6 +503,19 @@ class Rule:
         if self.remind_every is not None and self.remind_every <= _ZERO:
             raise ValueError("remind_every must be positive")
         _require_non_negative("escalate_after", self.escalate_after)
+
+
+@dataclass(frozen=True, slots=True, kw_only=True)
+class Acknowledgment:
+    """The first explicit awareness of an episode, shared by all recipients."""
+
+    episode_id: str
+    at: datetime
+    actor_id: str | None = None
+
+    def __post_init__(self) -> None:
+        """Require an explicit UTC time, as for every policy input."""
+        _require_utc("at", self.at)
 
 
 @dataclass(frozen=True, slots=True, kw_only=True)

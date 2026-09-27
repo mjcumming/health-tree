@@ -79,6 +79,9 @@ def test_checked_in_fixtures_match_the_schema() -> None:
         "scenario-73-activation-restarts-attention.yaml",
         "scenario-74-atomic-graph-registration.yaml",
         "scenario-75-group-rejoin-final-evidence.yaml",
+        "scenario-76-acknowledgment.yaml",
+        "scenario-77-unshelve.yaml",
+        "scenario-78-cancel-maintenance.yaml",
         "story-02-detector-hangs.yaml",
         "story-04-battery-digest.yaml",
         "story-06-ai-box.yaml",
@@ -86,6 +89,7 @@ def test_checked_in_fixtures_match_the_schema() -> None:
         "story-08-garage-door.yaml",
         "story-09-insteon-controller-chokes.yaml",
         "story-10-front-door-open-overnight.yaml",
+        "story-11-dishwasher-rinse-aid.yaml",
     ]
 
 

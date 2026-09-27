@@ -196,6 +196,10 @@ class ScriptedEngine:
         """Record the window."""
         return self._events("quiet", window, now)
 
+    def cancel_quiet(self, window: QuietWindow, now: datetime) -> list[Event]:
+        """End a scripted quiet window."""
+        return []
+
     def advance(self, now: datetime) -> list[Event]:
         """Record the advance."""
         return self._events("advance", None, now)
@@ -260,6 +264,18 @@ class ScriptedPolicy:
     def shelve(self, episode_id: str, until: datetime, now: datetime) -> list[Delivery]:
         """Record the shelf."""
         self.script.calls.append(("shelve", (episode_id, until), now))
+        return []
+
+    def acknowledge(
+        self, episode_id: str, now: datetime, *, actor_id: str | None = None
+    ) -> list[Delivery]:
+        """Record scripted awareness."""
+        return []
+
+    def unshelve(
+        self, episode_id: str, now: datetime, context: PolicyContext
+    ) -> list[Delivery]:
+        """End a scripted shelf."""
         return []
 
     def snapshot(self) -> dict[str, JSONValue]:

@@ -37,6 +37,7 @@ Each file records one decision: the context, what was decided, the options that 
 | [0031](0031-situation-alerts-in-scope-detected-outside.md) | Situation alerts are in scope, and the library never detects them | Accepted |
 | [0032](0032-a-situation-is-an-edgeless-node.md) | A situation is an edgeless node | Accepted |
 | [0033](0033-atomic-graph-registration.md) | Atomic graph registration | Accepted |
+| [0034](0034-acknowledgment-and-control-cancellation.md) | Policy-owned acknowledgment and early control cancellation | Accepted |
 
 ## Writing one
 

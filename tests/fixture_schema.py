@@ -291,10 +291,23 @@ def _rule(
         return
     _reject_unknown(
         value,
-        {"match", "loudness", "to", "digest", "remind_every", "escalate_after"},
+        {
+            "match",
+            "loudness",
+            "to",
+            "digest",
+            "remind_every",
+            "escalate_after",
+            "require_acknowledgment",
+        },
         where,
         problems,
     )
+    if (
+        "require_acknowledgment" in value
+        and type(value["require_acknowledgment"]) is not bool
+    ):
+        problems.append(f"{where}.require_acknowledgment must be a boolean")
     match = value.get("match")
     if not isinstance(match, dict):
         problems.append(f"{where}.match must be a mapping")
@@ -455,6 +468,9 @@ def _steps(
                 "quiet",
                 "ingest",
                 "shelve",
+                "acknowledge",
+                "unshelve",
+                "cancel_quiet",
                 "restart",
                 "activate",
                 "expect",
@@ -476,6 +492,9 @@ def _steps(
             "quiet",
             "ingest",
             "shelve",
+            "acknowledge",
+            "unshelve",
+            "cancel_quiet",
         } & set(step)
         if step.get("restart") is True and actions:
             problems.append(
@@ -494,6 +513,25 @@ def _steps(
         if "shelve" in step:
             _shelve_step(
                 step["shelve"], bound, at, has_policy, f"{path}.shelve", problems
+            )
+        if "acknowledge" in step:
+            acknowledgment = step["acknowledge"]
+            if not has_policy or not isinstance(acknowledgment, dict):
+                problems.append(f"{path}.acknowledge requires a policy and mapping")
+            else:
+                _reject_unknown(acknowledgment, {"episode", "actor_id"}, path, problems)
+                _ref(acknowledgment.get("episode"), bound, path, problems)
+                if "actor_id" in acknowledgment and not isinstance(
+                    acknowledgment["actor_id"], str
+                ):
+                    problems.append(f"{path}.acknowledge.actor_id must be a string")
+        if "unshelve" in step:
+            if not has_policy:
+                problems.append(f"{path}.unshelve requires a policy")
+            _ref(step["unshelve"], bound, path, problems)
+        if "cancel_quiet" in step:
+            _quiet_window(
+                step["cancel_quiet"], nodes, None, f"{path}.cancel_quiet", problems
             )
         if "quiet" in step:
             _quiet_window(step["quiet"], nodes, at, f"{path}.quiet", problems)
