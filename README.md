@@ -171,7 +171,7 @@ docs/adr/            architecture decision records
 
 - [docs/rfp.md](docs/rfp.md): what the library does. Change it before changing behavior.
 - [docs/adr](docs/adr/README.md): why, one decision per record.
-- [Homeostatic UI notes](https://github.com/mjcumming/homeostatic/blob/main/docs/ui.md): working notes for the integration's owner-facing surface, maintained in the integration repository. Not the library spec.
+- [Homeostatic UI notes](https://github.com/mjcumming/homeostatic/blob/feat/initial-integration/docs/ui.md): working notes for the integration's owner-facing surface, maintained in the integration repository. Not the library spec.
 - [CHANGELOG.md](CHANGELOG.md): what changed.
 - [CONTRIBUTING.md](CONTRIBUTING.md): workflow, checks, and releases. AI agents: [AGENTS.md](AGENTS.md).
 - [SECURITY.md](SECURITY.md): how to report a vulnerability.
