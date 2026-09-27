@@ -13,11 +13,11 @@ Each step calls, in order and all at the step's `at`:
    graph, and restore it
 3. `engine.register`, when the step adds or replaces a node
 4. `engine.remove`, when the step removes one
-5. `engine.quiet`, when the step opens a quiet window
+5. `engine.quiet`, then `engine.cancel_quiet`, when supplied
 6. `engine.ingest_many`, with the step's whole `ingest` list as one batch
 7. `policy.shelve`, when the step shelves an episode
 8. `policy.handle` for every event, in order, as each call returns them
-9. `policy.activate`, when the step starts attention afresh
+9. `policy.acknowledge`, `policy.unshelve`, then `policy.activate`, when supplied
 10. `policy.advance`
 
 The runner tracks open episodes from the events alone, and the current graph
@@ -105,6 +105,10 @@ class EngineLike(Protocol):
         """Open a quiet window."""
         ...
 
+    def cancel_quiet(self, window: QuietWindow, now: datetime) -> list[Event]:
+        """End one matching quiet window."""
+        ...
+
     def advance(self, now: datetime) -> list[Event]:
         """Move time forward."""
         ...
@@ -159,6 +163,18 @@ class PolicyLike(Protocol):
         """Hold one episode's deliveries."""
         ...
 
+    def acknowledge(
+        self, episode_id: str, now: datetime, *, actor_id: str | None = None
+    ) -> list[Delivery]:
+        """Record awareness."""
+        ...
+
+    def unshelve(
+        self, episode_id: str, now: datetime, context: PolicyContext
+    ) -> list[Delivery]:
+        """End one delivery hold."""
+        ...
+
     def snapshot(self) -> dict[str, JSONValue]:
         """Return all state."""
         ...
@@ -181,6 +197,9 @@ class Step:
     register_many: tuple[Node, ...]
     remove: str | None
     quiet: QuietWindow | None
+    cancel_quiet: QuietWindow | None = None
+    acknowledge: tuple[str, str | None] | None = None
+    unshelve: str | None = None
     ingest: tuple[Observation, ...]
     shelve: tuple[str, datetime] | None
     restart: bool
@@ -313,6 +332,14 @@ def _step(data: Mapping[str, Any]) -> Step:
         register_many=tuple(_node(item) for item in data.get("register_many", [])),
         remove=data.get("remove"),
         quiet=_quiet(data["quiet"]) if "quiet" in data else None,
+        cancel_quiet=_quiet(data["cancel_quiet"]) if "cancel_quiet" in data else None,
+        acknowledge=(
+            data["acknowledge"]["episode"],
+            data["acknowledge"].get("actor_id"),
+        )
+        if "acknowledge" in data
+        else None,
+        unshelve=data.get("unshelve"),
         ingest=tuple(_observation(item, at) for item in data.get("ingest", [])),
         shelve=(
             None if shelve is None else (shelve["episode"], _timestamp(shelve["until"]))
@@ -379,6 +406,7 @@ def _rule(data: Mapping[str, Any]) -> Rule:
         loudness=Loudness(data["loudness"]),
         to=(to,) if isinstance(to, str) else tuple(to),
         digest=data.get("digest"),
+        require_acknowledgment=data.get("require_acknowledgment", False),
         remind_every=(
             parse_duration(data["remind_every"]) if "remind_every" in data else None
         ),
@@ -476,6 +504,13 @@ class _Run:
             self._call(
                 self.engine.quiet(step.quiet, step.at), step.at, events, deliveries
             )
+        if step.cancel_quiet is not None:
+            self._call(
+                self.engine.cancel_quiet(step.cancel_quiet, step.at),
+                step.at,
+                events,
+                deliveries,
+            )
         if step.ingest:
             self._call(
                 self.engine.ingest_many(step.ingest, step.at),
@@ -489,6 +524,19 @@ class _Run:
             episode_id = self._resolve(reference) or reference
             deliveries.extend(self.policy.shelve(episode_id, until, step.at))
         if self.policy is not None:
+            if step.acknowledge is not None:
+                reference, actor = step.acknowledge
+                deliveries.extend(
+                    self.policy.acknowledge(
+                        self._resolve(reference) or reference, step.at, actor_id=actor
+                    )
+                )
+            if step.unshelve is not None:
+                deliveries.extend(
+                    self.policy.unshelve(
+                        self._resolve(step.unshelve) or step.unshelve, step.at, CONTEXT
+                    )
+                )
             if step.activate:
                 deliveries.extend(self.policy.activate(step.at, CONTEXT))
             deliveries.extend(self.policy.advance(step.at, CONTEXT))

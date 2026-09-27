@@ -1,0 +1,88 @@
+id: story-11-dishwasher-rinse-aid
+title: Low rinse aid reaches the morning digest without making the dishwasher unavailable
+covers: [story-11]
+start: 2026-09-25T03:00:00Z
+settings:
+  settle: 2m
+  rejoin_grace: 1m
+  startup_grace: 0s
+  coalesce_count: 3
+  coalesce_window: 60s
+policy:
+  batch: 30s
+  recipients:
+    michael:
+      channels: [phone]
+      quiet_hours: "22:30-07:00"
+  digests:
+    morning:
+      at: "08:00"
+      to: michael
+  rules:
+    - match: {category: maintenance}
+      loudness: digest
+      digest: morning
+    - match: {status: fail}
+      loudness: notify
+      to: michael
+graph:
+  - id: wifi
+    kind: network
+    checks:
+      - {id: availability, raise_hold: 0s, clear_hold: 30s, ttl: null, unknown_hold: 15m}
+  - id: dishwasher
+    kind: device
+    depends_on: [wifi]
+    checks:
+      - {id: availability, raise_hold: 0s, clear_hold: 30s, ttl: null, unknown_hold: 15m}
+  - id: rinse_aid
+    kind: maintenance
+    labels:
+      subject: dishwasher
+    checks:
+      - {id: level, raise_hold: 0s, clear_hold: 30s, ttl: null, unknown_hold: 15m, labels: {category: maintenance}}
+steps:
+  - at: 2026-09-25T03:00:00Z
+    ingest:
+      - {node: wifi, check: availability, status: pass, reason: available}
+      - {node: dishwasher, check: availability, status: pass, reason: available}
+      - {node: rinse_aid, check: level, status: warn, reason: rinse_aid_low}
+    expect:
+      bind:
+        rinse_aid_ep: {opened: rinse_aid}
+      events:
+        - {opened: {anchor: rinse_aid, episode: $rinse_aid_ep, reasons: [rinse_aid_low], recorded: []}}
+      open:
+        - {episode: $rinse_aid_ep, anchor: rinse_aid}
+      deliveries: []
+      queries:
+        readiness:
+          dishwasher: {answer: ready, names: []}
+        impact:
+          rinse_aid: {importance: normal, nodes: []}
+  - at: 2026-09-25T08:00:00Z
+    expect:
+      events: []
+      deliveries:
+        - {loudness: digest, digest: morning, episode: $rinse_aid_ep, to: michael}
+  - at: 2026-09-25T09:00:00Z
+    ingest:
+      - {node: rinse_aid, check: level, status: pass, reason: refilled}
+    expect:
+      events: []
+      open:
+        - {episode: $rinse_aid_ep, anchor: rinse_aid}
+      deliveries: []
+  - at: 2026-09-25T09:00:30Z
+    expect:
+      events:
+        - {resolved: {episode: $rinse_aid_ep, resolution: cleared}}
+      open: []
+      queries:
+        readiness:
+          dishwasher: {answer: ready, names: []}
+  - at: 2026-09-26T08:00:00Z
+    expect:
+      events: []
+      open: []
+      deliveries: []

@@ -1,0 +1,88 @@
+id: scenario-77-unshelve
+start: '2026-09-26T12:00:00Z'
+settings:
+  settle: 0s
+  rejoin_grace: 0s
+  startup_grace: 0s
+  coalesce_count: 3
+  coalesce_window: 60s
+graph:
+  - id: device
+    checks:
+      - id: state
+        raise_hold: 0s
+        clear_hold: 0s
+        ttl: null
+        unknown_hold: 15m
+title: Canceling a shelf releases a due batch without changing the episode
+covers:
+  - scenario-77
+policy:
+  batch: 2m
+  digests: {}
+  recipients:
+    owner:
+      channels:
+        - phone
+    backup:
+      channels:
+        - phone
+  rules:
+    - match: {}
+      loudness: notify
+      to:
+        - owner
+        - backup
+      remind_every: 5m
+      escalate_after: 10m
+      require_acknowledgment: true
+steps:
+  - at: '2026-09-26T12:00:00Z'
+    ingest:
+      - node: device
+        check: state
+        status: fail
+        reason: availability
+    expect:
+      events:
+        - opened:
+            anchor: device
+            episode: $problem
+      bind:
+        problem:
+          opened: device
+      deliveries: []
+  - at: '2026-09-26T12:01:00Z'
+    shelve:
+      episode: $problem
+      until: '2026-09-26T12:20:00Z'
+    expect:
+      events: []
+      deliveries: []
+  - at: '2026-09-26T12:02:00Z'
+    expect:
+      events: []
+      deliveries: []
+  - at: '2026-09-26T12:03:00Z'
+    restart: true
+    expect:
+      events: []
+      deliveries: []
+  - at: '2026-09-26T12:04:00Z'
+    unshelve: $problem
+    expect:
+      events: []
+      deliveries:
+        - loudness: notify
+          episode: $problem
+          to: owner
+          silent: false
+        - loudness: notify
+          episode: $problem
+          to: backup
+          silent: false
+  - at: '2026-09-26T12:05:00Z'
+    unshelve: $problem
+    expect:
+      events: []
+      deliveries: []

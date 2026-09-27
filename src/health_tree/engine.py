@@ -268,6 +268,19 @@ class Engine:
         )
         return self._evaluate(now)
 
+    def cancel_quiet(self, window: QuietWindow, now: datetime) -> list[Event]:
+        """End one matching window, leaving overlapping windows in force."""
+        self._tick(now)
+        for active in self._windows:
+            if (active.scope, active.node_id, active.until) == (
+                window.scope,
+                window.node_id,
+                window.until,
+            ):
+                self._windows.remove(active)
+                break
+        return self._evaluate(now)
+
     def advance(self, now: datetime) -> list[Event]:
         """Apply holds, `ttl`, gates, grace, and windows due at or before `now`."""
         self._tick(now)

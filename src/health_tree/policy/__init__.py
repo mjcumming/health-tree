@@ -29,6 +29,7 @@ from health_tree._codec import (
     time_to_json,
 )
 from health_tree.types import (
+    Acknowledgment,
     Delivery,
     Episode,
     EpisodeOpened,
@@ -47,7 +48,7 @@ from health_tree.types import (
     Rule,
 )
 
-SCHEMA_VERSION = 2
+SCHEMA_VERSION = 3
 """The version of the data `Policy.snapshot` returns."""
 
 _ZERO = timedelta(0)
@@ -71,6 +72,7 @@ class _Pending:
     recipient: str
     due: datetime
     cause: str = "open"
+    resume_at: datetime | None = None
 
 
 @dataclass(slots=True, kw_only=True)
@@ -83,6 +85,7 @@ class _Tracked:
     last_sent: datetime | None = None
     attention_since: datetime | None = None
     sent_at: dict[str, datetime] = field(default_factory=dict)
+    acknowledgment: Acknowledgment | None = None
 
 
 class Policy:
@@ -162,11 +165,18 @@ class Policy:
         deliveries: list[Delivery] = []
         for tracked in self._tracked.values():
             tracked.attention_since = now
+            if _acknowledged(tracked):
+                continue
             tracked.last_sent = None
             tracked.sent_to.clear()
             tracked.sent_at.clear()
             tracked.digested = False
-            tracked.decision = self._decide(tracked.episode, now, now)
+            tracked.decision = self._decide(
+                tracked.episode,
+                now,
+                now,
+                acknowledged=tracked.acknowledgment is not None,
+            )
             deliveries.extend(self._announce(tracked, now, cause="activate"))
         return deliveries
 
@@ -191,7 +201,50 @@ class Policy:
             "sent_to": strings_list(tracked.sent_to),
             "pending": {p.recipient: time_to_json(p.due) for p in tracked.pending},
             "last_sent": time_to_json(tracked.last_sent),
+            "acknowledgment": _acknowledgment_to_json(tracked.acknowledgment),
+            "require_acknowledgment": (
+                decision.rule is not None and decision.rule.require_acknowledgment
+            ),
         }
+
+    def acknowledgment(self, episode_id: str) -> Acknowledgment | None:
+        """Read awareness of an open episode without advancing time."""
+        return self._tracked[episode_id].acknowledgment
+
+    def acknowledge(
+        self, episode_id: str, now: datetime, *, actor_id: str | None = None
+    ) -> list[Delivery]:
+        """Record first awareness without resolving or shelving the episode."""
+        tracked = self._tracked[episode_id]
+        self._tick(now)
+        if tracked.acknowledgment is not None:
+            return []
+        tracked.acknowledgment = Acknowledgment(
+            episode_id=episode_id, at=now, actor_id=actor_id
+        )
+        tracked.decision = self._decide(
+            tracked.episode, now, tracked.attention_since, acknowledged=True
+        )
+        if _acknowledged(tracked):
+            tracked.pending.clear()
+        return self._replace(tracked)
+
+    def unshelve(
+        self, episode_id: str, now: datetime, context: PolicyContext
+    ) -> list[Delivery]:
+        """End a shelf and release due work under the remaining attention rules."""
+        tracked = self._tracked[episode_id]
+        self._tick(now)
+        until = self._shelves.pop(episode_id, None)
+        if until is None:
+            return []
+        for pending in tracked.pending:
+            if pending.resume_at is not None:
+                pending.due = pending.resume_at
+                pending.resume_at = None
+            elif pending.due == until:
+                pending.due = now
+        return self.advance(now, context)
 
     def shelve(self, episode_id: str, until: datetime, now: datetime) -> list[Delivery]:
         """Hold deliveries for one episode until `until`. An operator action."""
@@ -208,7 +261,7 @@ class Policy:
         for tracked in self._tracked.values():
             times.extend(pending.due for pending in tracked.pending)
             rule = tracked.decision.rule
-            if rule is not None and rule.remind_every:
+            if rule is not None and rule.remind_every and not _acknowledged(tracked):
                 if tracked.decision.loudness is Loudness.DIGEST and tracked.last_sent:
                     times.append(tracked.last_sent + rule.remind_every)
                 elif tracked.decision.loudness in {Loudness.NOTIFY, Loudness.URGENT}:
@@ -241,7 +294,7 @@ class Policy:
 
     def restore(self, state: Mapping[str, JSONValue], now: datetime) -> None:
         """Restore a snapshot taken by `snapshot`. Decisions are made afresh."""
-        if state.get("schema_version") not in {1, SCHEMA_VERSION}:
+        if state.get("schema_version") not in {1, 2, SCHEMA_VERSION}:
             raise ValueError(f"cannot restore schema {state.get('schema_version')!r}")
         self._tick(now)
         for name, at in as_object(state["next_digest"]).items():
@@ -255,9 +308,11 @@ class Policy:
             data = as_object(item)
             episode = episode_from_json(data["episode"])
             attention_since = time_from_json(data.get("attention_since"))
+            acknowledgment = _acknowledgment_from_json(data.get("acknowledgment"))
             self._tracked[episode.episode_id] = _Tracked(
                 episode=episode,
                 attention_since=attention_since,
+                acknowledgment=acknowledgment,
                 sent_at={
                     name: required_time(at)
                     for name, at in as_object(
@@ -273,7 +328,10 @@ class Policy:
                     if name in self._config.recipients
                 },
                 decision=self._decide(
-                    episode, required_time(state["now"]), attention_since
+                    episode,
+                    required_time(state["now"]),
+                    attention_since,
+                    acknowledged=acknowledgment is not None,
                 ),
                 sent_to={
                     str(name): None
@@ -285,6 +343,7 @@ class Policy:
                         recipient=str(as_object(p)["recipient"]),
                         due=required_time(as_object(p)["due"]),
                         cause=str(as_object(p).get("cause", "open")),
+                        resume_at=time_from_json(as_object(p).get("resume_at")),
                     )
                     for p in as_list(data["pending"])
                     if as_object(p)["recipient"] in self._config.recipients
@@ -307,7 +366,12 @@ class Policy:
         return self._config.recipients[recipient].channels
 
     def _decide(
-        self, episode: Episode, now: datetime, attention_since: datetime | None = None
+        self,
+        episode: Episode,
+        now: datetime,
+        attention_since: datetime | None = None,
+        *,
+        acknowledged: bool = False,
     ) -> _Decision:
         """ADR 0020: match each reason, first rule wins; the loudest reason wins."""
         best = _SILENT
@@ -316,7 +380,9 @@ class Policy:
             for index, rule in enumerate(self._config.rules):
                 if not _matches(rule.match, finding, episode, now):
                     continue
-                decision = self._outcome(rule, episode, now, attention_since)
+                decision = self._outcome(
+                    rule, episode, now, attention_since, acknowledged
+                )
                 if decision.loudness > best.loudness or (
                     decision.loudness == best.loudness and index < best_index
                 ):
@@ -330,6 +396,7 @@ class Policy:
         episode: Episode,
         now: datetime,
         attention_since: datetime | None,
+        acknowledged: bool,
     ) -> _Decision:
         recipients = rule.to
         if not recipients and rule.digest is not None:
@@ -337,6 +404,7 @@ class Policy:
         loudness = rule.loudness
         if (
             rule.escalate_after is not None
+            and not (acknowledged and rule.require_acknowledgment)
             and now - (attention_since or episode.opened_at) >= rule.escalate_after
         ):
             raised = _LADDER[min(_LADDER.index(loudness) + 1, len(_LADDER) - 1)]
@@ -355,6 +423,8 @@ class Policy:
         """A new episode, or a louder one: this is the noise."""
         decision = tracked.decision
         tracked.pending.clear()
+        if _acknowledged(tracked):
+            return []
         if decision.loudness is Loudness.DIGEST:
             tracked.digested = False
             return []
@@ -362,7 +432,7 @@ class Policy:
             until = self._shelves.get(tracked.episode.episode_id)
             if until is not None and until > now:
                 tracked.pending = [
-                    _Pending(recipient=r, due=until, cause=cause)
+                    _Pending(recipient=r, due=until, cause=cause, resume_at=now)
                     for r in decision.recipients
                 ]
                 return []
@@ -380,7 +450,10 @@ class Policy:
         """Match again. Louder makes noise; otherwise refresh silently if changed."""
         before = tracked.decision
         tracked.decision = after = self._decide(
-            tracked.episode, now, tracked.attention_since
+            tracked.episode,
+            now,
+            tracked.attention_since,
+            acknowledged=tracked.acknowledgment is not None,
         )
         if after.loudness > before.loudness:
             return self._announce(tracked, now, cause="escalate")
@@ -413,12 +486,17 @@ class Policy:
 
     def _release(self, tracked: _Tracked, now: datetime) -> list[Delivery]:
         """Send batched `notify` deliveries, holding them through quiet hours."""
+        if _acknowledged(tracked):
+            tracked.pending.clear()
+            return []
         deliveries: list[Delivery] = []
         shelf = self._shelves.get(tracked.episode.episode_id)
         for pending in list(tracked.pending):
             if pending.due > now:
                 continue
             if shelf is not None and shelf > now:
+                if pending.resume_at is None:
+                    pending.resume_at = pending.due
                 pending.due = shelf
                 continue
             quiet = self._config.recipients[pending.recipient].quiet_hours
@@ -438,7 +516,7 @@ class Policy:
     def _remind(self, tracked: _Tracked, now: datetime) -> list[Delivery]:
         """Repeat each recipient's message without bypassing their holds."""
         rule = tracked.decision.rule
-        if rule is None or rule.remind_every is None:
+        if rule is None or rule.remind_every is None or _acknowledged(tracked):
             return []
         if tracked.decision.loudness is Loudness.DIGEST:
             if (
@@ -470,6 +548,7 @@ class Policy:
                 decision.loudness is not Loudness.DIGEST
                 or decision.digest != name
                 or tracked.digested
+                or _acknowledged(tracked)
                 or (shelf is not None and shelf > now)
             ):
                 continue
@@ -509,7 +588,9 @@ class Policy:
         for rule in self._config.rules:
             if rule.match.age is not None:
                 yield episode.opened_at + rule.match.age
-            if rule.escalate_after is not None:
+            if rule.escalate_after is not None and not (
+                tracked.acknowledgment is not None and rule.require_acknowledgment
+            ):
                 yield (
                     tracked.attention_since or episode.opened_at
                 ) + rule.escalate_after
@@ -556,11 +637,47 @@ def _tracked_to_json(tracked: _Tracked) -> JSONObject:
         "episode": episode_to_json(tracked.episode),
         "sent_to": strings_list(tracked.sent_to),
         "pending": [
-            {"recipient": p.recipient, "due": time_to_json(p.due), "cause": p.cause}
+            {
+                "recipient": p.recipient,
+                "due": time_to_json(p.due),
+                "cause": p.cause,
+                "resume_at": time_to_json(p.resume_at),
+            }
             for p in tracked.pending
         ],
         "digested": tracked.digested,
         "last_sent": time_to_json(tracked.last_sent),
         "attention_since": time_to_json(tracked.attention_since),
         "sent_at": {name: time_to_json(at) for name, at in tracked.sent_at.items()},
+        "acknowledgment": _acknowledgment_to_json(tracked.acknowledgment),
     }
+
+
+def _acknowledged(tracked: _Tracked) -> bool:
+    return (
+        tracked.acknowledgment is not None
+        and tracked.decision.rule is not None
+        and tracked.decision.rule.require_acknowledgment
+    )
+
+
+def _acknowledgment_to_json(value: Acknowledgment | None) -> JSONObject | None:
+    if value is None:
+        return None
+    return {
+        "episode_id": value.episode_id,
+        "at": time_to_json(value.at),
+        "actor_id": value.actor_id,
+    }
+
+
+def _acknowledgment_from_json(value: JSONValue) -> Acknowledgment | None:
+    if value is None:
+        return None
+    data = as_object(value)
+    actor = data["actor_id"]
+    return Acknowledgment(
+        episode_id=str(data["episode_id"]),
+        at=required_time(data["at"]),
+        actor_id=None if actor is None else str(actor),
+    )

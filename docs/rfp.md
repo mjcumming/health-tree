@@ -4,11 +4,11 @@ Design of record for this library. A Home Assistant integration is the first con
 
 | | |
 | --- | --- |
-| Version | 0.7 |
-| Date | 2026-09-25 |
-| Status | Draft for review, with ADRs 0024 to 0033 accepted. A first engine and policy pass every fixture. Nothing is released until the types, stories, and scenarios are accepted. |
+| Version | 0.8 |
+| Date | 2026-09-26 |
+| Status | Draft for review, with ADRs 0024 to 0034 accepted. The library is at version 0.3.0, and the engine and policy pass every fixture. Real observation proofs remain outstanding. |
 | Decisions | [docs/adr](adr/README.md) |
-| Changes from 0.6 | Section 19 |
+| Changes from 0.7 | Section 20 |
 
 ## Purpose
 
@@ -388,6 +388,16 @@ string: `open`, `update`, `remind`, `escalate`, `activate`, or `digest`; consume
 use it for presentation. Quiet hours and shelves also hold reminders; a record-only
 rule never sends one. Pending reminders are coalesced, not accumulated.
 
+### Acknowledgment and ending controls early
+
+`Rule.require_acknowledgment` defaults to false. `Policy.acknowledge(episode_id, now, actor_id=None)` records the first acknowledgment of an open episode and returns silent updates for recipients who already received it. Repeated acknowledgment returns no deliveries and preserves the first actor and time. `Policy.acknowledgment(episode_id)` returns an immutable `Acknowledgment(episode_id, at, actor_id)` or `None`; unknown or resolved ids raise `KeyError`. The actor is an opaque string.
+
+Acknowledgment applies across recipients and channels. An acknowledged episode remains active with unchanged observations and readiness. For rules that require acknowledgment, age escalation is disabled and pending, initial, digest, and reminder notifications are suppressed; existing messages still receive silent updates and resolution notices. Rules without that option continue normally, including changes in status, reason, age, or deadline that select a different rule. Acknowledgment survives restart and activation. Resolution removes it; recurrence and absorption into another episode do not inherit it. Delivery, dismissal, and shelving never imply acknowledgment.
+
+`Policy.unshelve(episode_id, now, context)` removes a shelf and processes due attention under current rules and quiet hours. A known unshelved episode is a no-op. Removing a shelf does not bypass the original batch delay. `Engine.cancel_quiet(window, now)` removes the first window matching scope, node, and original expiry, then reevaluates; other overlapping windows remain. No matching window is a no-op apart from normal time advancement. These actions never synthesize passing observations. The adapter uses its retained control ids to select one request and reject repeated cancellation.
+
+Policy snapshot version 3 adds acknowledgment and the original due time of shelf-held deliveries. Versions 1 and 2 restore without acknowledgment. The engine's snapshot format is unchanged.
+
 ## 8. Interface and queries
 
 The engine and the policy are state machines with no I/O (ADR 0003). The names below are the shape of the interface, not final signatures.
@@ -402,6 +412,7 @@ engine.remove(node_id, now) -> list[Event]
 engine.ingest(observation, now) -> list[Event]
 engine.ingest_many(observations, now) -> list[Event]  # one atomic observation batch
 engine.quiet(window, now) -> list[Event]        # scoped quiet window
+engine.cancel_quiet(window, now) -> list[Event] # end one matching window
 engine.advance(now) -> list[Event]              # holds, ttl, gates, grace, windows
 engine.next_deadline() -> datetime | None       # the adapter schedules one timer
 engine.snapshot() -> dict
@@ -411,6 +422,9 @@ policy = Policy(config)
 policy.handle(event, now, context) -> list[Delivery]
 policy.advance(now, context) -> list[Delivery]  # digests, reminders, ends of quiet hours
 policy.shelve(episode_id, until, now) -> list[Delivery]
+policy.unshelve(episode_id, now, context) -> list[Delivery]
+policy.acknowledge(episode_id, now, *, actor_id=None) -> list[Delivery]
+policy.acknowledgment(episode_id) -> Acknowledgment | None
 policy.activate(now, context) -> list[Delivery]
 policy.explain(episode_id) -> dict
 policy.next_deadline() -> datetime | None
@@ -459,6 +473,8 @@ Written against this house. Node names are for reading. The fixtures use ids. Ea
 8. **The garage door does not close.** Close is commanded at 23:10. At 23:10:30 the door is still open. The command check reports `command_failed` / `fail`, labelled `category: operation`, and the garage function has `high` importance. No dependency is in doubt, so the settle gate does not hold it. The policy delivers it at 23:10:30, through quiet hours, to whoever is home. The episode resolves when the door closes.
 9. **The Insteon controller chokes.** The controller is `warn`, and its episode is open. Thirty Insteon devices report `command_failed` within a minute. They are recorded on the controller's episode, which gains the reason `dependents_failing`. One episode, not thirty-one. As devices recover, they leave it. If two are still failing after the rest recover, each gets its own episode: those two are broken on their own.
 10. **The front door is left open overnight.** The door opens at 23:04. The owner's Home Assistant rule holds when the door has been open for three hours between 22:00 and 07:00, so its entity turns on at 02:04. The situation node is `high`, labelled `category: situation`, with no edges. One episode opens at 02:04, with an empty impact, and the policy delivers it at once, through quiet hours: the front door has been open since 23:04. At 02:10 the Z-Wave controller drops. The door sensor is recorded on the controller's episode, and the rule's entity turns `unavailable`, so the situation reports `unknown`. The situation's episode stays open, and nothing is sent. At 02:25 its `unknown_hold` ends, the reason becomes `stale`, and it pages again: the house can no longer tell whether the door is still open. At 02:30 the controller is back and the rule holds again, which is a silent update. The controller's episode resolves at 02:30:30, before quiet hours end, so it is never delivered. At 06:50 the owner closes the door, and the situation resolves with a silent resolution.
+
+11. **The dishwasher needs rinse aid.** At 03:00 the Wi-Fi dishwasher's Home Assistant entity reports low rinse aid. The integration reports `rinse_aid_low` / `warn` on a separate maintenance node, labelled `category: maintenance` and tied to the dishwasher by a subject label, with no edges. The dishwasher remains available; its connectivity node depends on Wi-Fi, but the rinse-aid node does not. One maintenance episode opens, with no impact on other capabilities. Nothing is sent overnight. The 08:00 digest reads: dishwasher needs rinse aid; refill the dispenser. At 09:00 the owner refills it and the entity reports normal. The integration reports `pass`, and the episode resolves after its 30-second clear hold. The reminder is absent from the next digest. This story assumes the appliance exposes a rinse-aid indication; detecting it and supplying the remedy belong to the integration.
 
 ## 10. Scenarios the library must pass
 
@@ -549,6 +565,10 @@ Each is tagged with its area.
 
 75. **Engine.** When a group loses enough members to dissolve, apply their rejoin stale-clock resets before emitting the call's final events. An unknown member with a restarted clock cannot open a stale episode in that call. Immediate snapshot/restore must not introduce an extra update.
 
+76. **Acknowledgment.** An opted-in notify rule reminds and escalates until explicitly acknowledged. The first actor and time survive repeated requests, restart, and activation. Both recipients stop receiving repeated alerts; readiness stays blocked. Observed recovery resolves once; a new episode alerts again.
+77. **Shelving cancellation.** A batched notify is held by a shelf. Ending it early releases due work while respecting quiet hours and the original batch delay. Repeating cancellation of a known unshelved episode sends nothing extra.
+78. **Maintenance cancellation.** Two overlapping quiet windows cover a failing node. Canceling one leaves the other in force through restart. Canceling the second opens the still-observed failure, without changing its own status.
+
 ## 11. Home Assistant integration, later
 
 Not part of this library. Recorded so the boundary stays visible. It is a separate repository, named `homeostatic`. As of 2026-09-25, the name is free on GitHub (`mjcumming/homeostatic`) and PyPI, with no colliding Home Assistant or HACS project found. `homeostat` was considered and set aside: the name is live at github.com/freol35241/homeostat, an active, unrelated home-automation project.
@@ -577,6 +597,12 @@ Not part of this library. Recorded so the boundary stays visible. It is a separa
 - The settings UI owns the durations. Starting values, which the owner can change: `settle` 2 minutes, `rejoin_grace` 1 minute, `coalesce_count` 3, `coalesce_window` 60 seconds, `batch` 30 seconds, startup grace 2 minutes. The catalog sets `raise_hold`, `clear_hold`, `ttl`, and `unknown_hold` per check. Where it has none, the UI offers fallbacks the owner can change: `clear_hold` 2 minutes and `unknown_hold` 15 minutes.
 - Create or restore the engine when Home Assistant reports it has started, not when the integration loads, so startup grace covers the settling period.
 - Situations (ADRs 0031 and 0032). The owner names an alert and binds it to one Home Assistant entity that the owner builds: a template, a binary sensor, or a helper kept by an automation. `on` is `fail`, `off` is `pass`, and `unavailable` or `unknown` is `unknown`. The integration ships no condition builder. The bound entity must turn `unavailable`, not `off`, when its source is unavailable, or a dead sensor reads as a clear. The integration warns when a bound template declares no availability. Its lint rejects edges to or from a situation node. Maintenance never uses the `all` scope.
+
+### Deferred diagnostic sources
+
+Generic monitoring of Home Assistant warnings, errors, Python exceptions, and tracebacks is deferred. A log entry does not reliably identify the affected capability, establish continuing failure, or prove recovery, and integrations differ too much in retry and logging behavior for a generic repetition threshold to be meaningful. Homeostatic does not parse raw logs or turn general log events into checks or episodes. Structured sources such as config-entry state, entity availability, Repairs, freshness, command results, and end-to-end probes remain authoritative; logs are troubleshooting evidence only.
+
+A future source-specific enhancement may use a log condition only when it defines stable source identity, an opening rule, a recovery rule, deduplication, and bounded retention, and when no suitable structured signal exists. Without evidence that proves clearing, the condition cannot own an episode.
 
 ### Observation proofs
 
@@ -679,3 +705,9 @@ The library is done when:
 - Atomic graph registration through `register_many`, with final-graph validation, retained check state, and one evaluation (ADR 0033). Single registration delegates to it.
 - Scenario 74 and a batch-registration fixture step cover simultaneous dependency rewiring, forward references, retained evidence, and restart.
 - Scenario 75 covers final event consistency after a group dissolves and its members rejoin.
+
+## 20. Changes from 0.7
+
+- Policy-owned, explicit acknowledgment with opt-in rules, restart persistence, and read-only records; no change to evidence or recovery (ADR 0034).
+- Early cancellation of an episode shelf or one scoped quiet window, including overlapping controls and restored state.
+- Scenarios 76 to 78 cover acknowledgment, shelving cancellation, and overlapping maintenance cancellation.

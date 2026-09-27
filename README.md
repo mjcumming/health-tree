@@ -6,9 +6,9 @@ A house, or any system you can draw as dependencies, can lose a whole machine, a
 
 Health Tree is the layer that tells a root failure from its symptoms, says what the failure takes down, and decides who hears about it and when.
 
-Home Assistant is the first consumer. Its integration, [homeostatic](docs/rfp.md#11-home-assistant-integration-later), lives in its own repository and is not part of this package.
+Home Assistant is the first consumer. Its integration, [Homeostatic](https://github.com/mjcumming/homeostatic), lives in its own repository and is not part of this package.
 
-> **Status: first engine.** The engine and the attention policy pass every story and scenario fixture. The design of record is [docs/rfp.md](docs/rfp.md) (version 0.7, draft for review). ADRs 0001 to 0033 are accepted or superseded. Real observation proofs remain outstanding. Version 0.2.0 is on PyPI as `health-tree`.
+> **Status: 0.4.0, early development.** The engine and the attention policy pass every story and scenario fixture. The design of record is [docs/rfp.md](docs/rfp.md) (version 0.8, draft for review). ADRs 0001 to 0034 are accepted or superseded. Real observation proofs remain outstanding. The package has no runtime dependencies. Synthetic scenarios establish library behavior; adapters must supply and validate real observations.
 
 ## Principles
 
@@ -95,7 +95,7 @@ The door is only a device, but the `garage` function that depends on it is `high
 
 ## Registering a graph
 
-The 0.3.0 candidate adds atomic graph registration.
+Atomic graph registration is available since 0.3.0.
 
 Use `engine.register_many(nodes, now)` when an adapter discovers multiple nodes
 at once. The batch adds or replaces those nodes, keeps unchanged nodes and
@@ -123,16 +123,38 @@ enabling notifications after record-only monitoring. It preserves episode identi
 and age, restarts escalation, and returns or schedules initial requests subject to
 batching, quiet hours and shelves. Reminders begin with each recipient's actual
 request. An adapter can combine activation requests into summaries. Ordinary
-restart uses `restore`, which preserves attention clocks and reads schema 1 or 2;
-new snapshots use schema 2. Scenarios 72 and 73 cover activation and reminder holds.
-Scenario ids 65 to 71 are reserved for the separate acknowledgment design increment.
+restart uses `restore`, which preserves attention clocks and reads policy schemas
+1, 2, or 3; new snapshots use schema 3. Scenarios 72 and 73 cover activation and
+reminder holds. Older policy snapshots restore without an acknowledgment.
 
-## Planned modules
+## Acknowledgment and temporary controls
+
+Acknowledgment means someone has seen an open problem. It does not change checks,
+readiness, episode identity, or the evidence required for recovery.
+
+- `policy.acknowledge(episode_id, now, actor_id="owner")` records the first UTC
+  time and optional opaque actor id, shared across recipients. Repeating the
+  request preserves that first record. `policy.acknowledgment(episode_id)` reads it.
+- A rule with `require_acknowledgment=True` stops its pending notifications,
+  reminders, digests, and age escalation after acknowledgment. Other rules keep
+  their configured behavior; silent updates and recovery still reach existing
+  recipients. Restore and activation preserve awareness. A new episode starts
+  unacknowledged.
+- `policy.unshelve(episode_id, now, context)` ends a shelf early and reevaluates
+  due attention under batching, quiet hours, and acknowledgment rules.
+- `engine.cancel_quiet(window, now)` removes one matching quiet window. Other
+  overlapping windows remain effective; observed health stays unchanged.
+
+The adapter authorizes and persists these actions. Transport publication, phone
+receipt, and dismissal never imply human acknowledgment. See [ADR 0034](docs/adr/0034-acknowledgment-and-control-cancellation.md)
+and executable scenarios 76–78 for restart, cancellation, and recovery behavior.
+
+## Modules
 
 | Part | Module | Owns |
 | --- | --- | --- |
 | Engine | `health_tree` | Graph, checks, evaluation, inhibition, episodes, importance, quiet windows, snapshots, queries |
-| Attention policy | `health_tree.policy` | Rules, recipients, loudness, quiet hours, digests, reminders, escalation, shelving |
+| Attention policy | `health_tree.policy` | Rules, recipients, loudness, quiet hours, digests, reminders, escalation, acknowledgment, shelving |
 | Conventions | `health_tree.conventions` | Standard reasons, categories, and label names, with no behavior |
 
 ## Repository layout
@@ -149,7 +171,7 @@ docs/adr/            architecture decision records
 
 - [docs/rfp.md](docs/rfp.md): what the library does. Change it before changing behavior.
 - [docs/adr](docs/adr/README.md): why, one decision per record.
-- [docs/ideas/homeostatic-ui.md](docs/ideas/homeostatic-ui.md): working notes for the integration's owner-facing surface. Not the spec.
+- [Homeostatic UI notes](https://github.com/mjcumming/homeostatic/blob/main/docs/ui.md): working notes for the integration's owner-facing surface, maintained in the integration repository. Not the library spec.
 - [CHANGELOG.md](CHANGELOG.md): what changed.
 - [CONTRIBUTING.md](CONTRIBUTING.md): workflow, checks, and releases. AI agents: [AGENTS.md](AGENTS.md).
 - [SECURITY.md](SECURITY.md): how to report a vulnerability.
