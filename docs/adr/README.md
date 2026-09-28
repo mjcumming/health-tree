@@ -39,6 +39,8 @@ Each file records one decision: the context, what was decided, the options that 
 | [0033](0033-atomic-graph-registration.md) | Atomic graph registration | Accepted |
 | [0034](0034-acknowledgment-and-control-cancellation.md) | Policy-owned acknowledgment and early control cancellation | Accepted |
 
+| [0035](0035-scheduled-open-problem-reporting.md) | Scheduled open-problem reports and affected-node matching | Accepted |
+
 ## Writing one
 
 Write an ADR when a decision changes the public interface or a rule in the RFP, would be easy to reverse by mistake, or picks between real alternatives. Details that are clear from the code do not need one.

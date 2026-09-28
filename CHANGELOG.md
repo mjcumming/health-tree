@@ -4,6 +4,13 @@ All notable changes to this project are documented here. The format follows [Kee
 
 ## [Unreleased]
 
+## [0.5.0] - 2026-09-28
+
+### Added
+
+- Weekday schedules, recurring open-problem digests, multiple digest recipients,
+  read-only report forecasts, and affected-node and check matching (ADR 0035).
+
 ## [0.4.1] - 2026-09-28
 
 ### Changed

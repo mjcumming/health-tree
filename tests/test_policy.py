@@ -36,6 +36,97 @@ CONTEXT = PolicyContext()
 HOUR = timedelta(hours=1)
 
 
+@pytest.mark.parametrize(
+    ("now", "clock", "expected"),
+    [
+        pytest.param(
+            "2026-03-08T06:00:00+00:00",
+            time(2, 30),
+            "2026-03-08T08:30:00+00:00",
+            id="spring-gap-forward",
+        ),
+        pytest.param(
+            "2026-11-01T05:00:00+00:00",
+            time(1, 30),
+            "2026-11-01T06:30:00+00:00",
+            id="fall-first-occurrence",
+        ),
+        pytest.param(
+            "2026-11-01T07:00:00+00:00",
+            time(1, 30),
+            "2026-11-08T07:30:00+00:00",
+            id="fall-no-second-report",
+        ),
+    ],
+)
+def test_report_forecast_weekly_dst(now: str, clock: time, expected: str) -> None:
+    """Local weekly schedules handle skipped and repeated clock times once."""
+    policy = Policy(
+        PolicyConfig(
+            batch=timedelta(0),
+            timezone=ZoneInfo("America/Chicago"),
+            recipients={"owner": Recipient(channels=("phone",))},
+            digests={"weekly": Digest(at=clock, to="owner", weekdays=frozenset({6}))},
+            rules=(Rule(match=Match(), loudness=Loudness.DIGEST, digest="weekly"),),
+        )
+    )
+    before = policy.snapshot()
+    assert policy.reports(datetime.fromisoformat(now)) == [
+        {
+            "name": "weekly",
+            "next_at": expected,
+            "episodes": [],
+            "recipients": ["owner"],
+        }
+    ]
+    assert policy.snapshot() == before
+
+
+def test_repeat_report_tracks_previous_recipient_and_clearing() -> None:
+    """A report is provisional, ongoing only after sending, and never empty."""
+    policy = Policy(
+        PolicyConfig(
+            batch=timedelta(0),
+            timezone=UTC,
+            recipients={"owner": Recipient(channels=("phone",))},
+            digests={"daily": Digest(at=time(8), to="owner", repeat_open=True)},
+            rules=(Rule(match=Match(), loudness=Loudness.DIGEST, digest="daily"),),
+        )
+    )
+    now = datetime(2026, 9, 28, 7, tzinfo=UTC)
+    episode = replace(_episode(), opened_at=now, updated_at=now)
+    policy.handle(EpisodeOpened(episode=episode), now, CONTEXT)
+    assert policy.reports(now)[0]["episodes"] == [episode.episode_id]
+    first = policy.advance(now + HOUR, CONTEXT)
+    assert first == [
+        Notification(
+            episode_id="e1",
+            recipient="owner",
+            channels=("phone",),
+            loudness=Loudness.DIGEST,
+            digest="daily",
+            cause="digest",
+        )
+    ]
+    later = now + timedelta(days=3)
+    assert isinstance(first[0], Notification)
+    assert policy.advance(later, CONTEXT) == [
+        replace(first[0], previously_reported=True)
+    ]
+    assert policy.advance(later, CONTEXT) == []
+    policy.handle(
+        EpisodeResolved(episode=episode, resolution="cleared"), later, CONTEXT
+    )
+    assert policy.reports(later)[0]["episodes"] == []
+    assert policy.advance(later + timedelta(days=1), CONTEXT) == []
+
+
+def test_report_forecast_rejects_non_utc() -> None:
+    """A forecast uses the same explicit UTC boundary as other policy queries."""
+    with pytest.raises(ValueError, match="UTC"):
+        _policy().reports(datetime(2026, 9, 28))
+
+
 def _episode(
     episode_id: str = "e1",
     *,

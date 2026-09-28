@@ -151,7 +151,10 @@ class Policy:
             if self._next_digest[name] <= now:
                 deliveries.extend(self._digest(name, now))
                 self._next_digest[name] = self._occurrence(
-                    self._config.digests[name].at, now, after=True
+                    self._config.digests[name].at,
+                    now,
+                    after=True,
+                    weekdays=self._config.digests[name].weekdays,
                 )
         return deliveries
 
@@ -159,7 +162,9 @@ class Policy:
         """Start attention afresh for tracked episodes, preserving their history."""
         self._tick(now)
         self._next_digest = {
-            name: self._occurrence(digest.at, now, after=False)
+            name: self._occurrence(
+                digest.at, now, after=False, weekdays=digest.weekdays
+            )
             for name, digest in self._config.digests.items()
         }
         deliveries: list[Delivery] = []
@@ -359,7 +364,9 @@ class Policy:
             raise ValueError("now must not go backwards")
         if self._last is None:
             for name, digest in self._config.digests.items():
-                self._next_digest[name] = self._occurrence(digest.at, now, after=False)
+                self._next_digest[name] = self._occurrence(
+                    digest.at, now, after=False, weekdays=digest.weekdays
+                )
         self._last = now
 
     def _channels(self, recipient: str) -> tuple[str, ...]:
@@ -539,34 +546,75 @@ class Policy:
         return self._release(tracked, now)
 
     def _digest(self, name: str, now: datetime) -> list[Delivery]:
-        recipient = self._config.digests[name].to
         deliveries: list[Delivery] = []
         for tracked in self._tracked.values():
             decision = tracked.decision
-            shelf = self._shelves.get(tracked.episode.episode_id)
-            if (
-                decision.loudness is not Loudness.DIGEST
-                or decision.digest != name
-                or tracked.digested
-                or _acknowledged(tracked)
-                or (shelf is not None and shelf > now)
-            ):
+            if not self._reportable(tracked, name, now):
                 continue
             tracked.digested = True
-            tracked.sent_to[recipient] = None
-            tracked.sent_at[recipient] = now
             tracked.last_sent = now
-            deliveries.append(
-                Notification(
-                    episode_id=tracked.episode.episode_id,
-                    recipient=recipient,
-                    channels=self._channels(recipient),
-                    loudness=Loudness.DIGEST,
-                    digest=name,
-                    cause="digest",
+            for recipient in decision.recipients:
+                previously_reported = recipient in tracked.sent_to
+                tracked.sent_to[recipient] = None
+                tracked.sent_at[recipient] = now
+                deliveries.append(
+                    Notification(
+                        episode_id=tracked.episode.episode_id,
+                        recipient=recipient,
+                        channels=self._channels(recipient),
+                        loudness=Loudness.DIGEST,
+                        digest=name,
+                        cause="digest",
+                        previously_reported=previously_reported,
+                    )
                 )
-            )
         return deliveries
+
+    def _reportable(self, tracked: _Tracked, name: str, now: datetime) -> bool:
+        shelf = self._shelves.get(tracked.episode.episode_id)
+        return (
+            tracked.decision.loudness is Loudness.DIGEST
+            and tracked.decision.digest == name
+            and (not tracked.digested or self._config.digests[name].repeat_open)
+            and not _acknowledged(tracked)
+            and (shelf is None or shelf <= now)
+        )
+
+    def reports(self, now: datetime) -> list[JSONObject]:
+        """Forecast scheduled reports from current state without advancing it.
+
+        Counts are provisional: evidence, shelving, and rules may change before
+        delivery. Overdue schedules retain their due time until `advance`.
+        """
+        if now.utcoffset() != _ZERO:
+            raise ValueError("now must be a timezone-aware UTC datetime")
+        return [
+            {
+                "name": name,
+                "next_at": time_to_json(
+                    self._next_digest.get(name)
+                    or self._occurrence(
+                        digest.at, now, after=False, weekdays=digest.weekdays
+                    )
+                ),
+                "episodes": [
+                    tracked.episode.episode_id
+                    for tracked in self._tracked.values()
+                    if self._reportable(tracked, name, now)
+                ],
+                "recipients": strings_list(
+                    sorted(
+                        {
+                            recipient
+                            for rule in self._config.rules
+                            if rule.digest == name
+                            for recipient in (rule.to or (digest.to,))
+                        }
+                    )
+                ),
+            }
+            for name, digest in self._config.digests.items()
+        ]
 
     def _send(
         self, tracked: _Tracked, recipient: str, now: datetime, cause: str
@@ -599,14 +647,25 @@ class Policy:
                     if finding.due_at is not None:
                         yield finding.due_at - rule.match.due_within
 
-    def _occurrence(self, clock: time, now: datetime, *, after: bool) -> datetime:
+    def _occurrence(
+        self,
+        clock: time,
+        now: datetime,
+        *,
+        after: bool,
+        weekdays: frozenset[int] = frozenset(range(7)),
+    ) -> datetime:
         """The next time the policy's clock shows `clock`, in UTC."""
         zone = self._config.timezone
         local = now.astimezone(zone)
-        candidate = datetime.combine(local.date(), clock, tzinfo=zone)
-        if candidate < now or (after and candidate == now):
-            candidate = datetime.combine(local.date() + _DAY, clock, tzinfo=zone)
-        return candidate.astimezone(now.tzinfo)
+        day = local.date()
+        while True:
+            candidate = datetime.combine(day, clock, tzinfo=zone).astimezone(now.tzinfo)
+            if day.weekday() in weekdays and (
+                candidate > now or (not after and candidate == now)
+            ):
+                return candidate
+            day += _DAY
 
     def _in_quiet_hours(self, quiet: QuietHours, now: datetime) -> bool:
         clock = now.astimezone(self._config.timezone).time()
@@ -623,6 +682,14 @@ def _matches(match: Match, finding: Finding, episode: Episode, now: datetime) ->
         and (match.importance is None or episode.importance in match.importance)
         and (match.reason is None or finding.reason in match.reason)
         and (match.category is None or labels.get("category") in match.category)
+        and (
+            match.nodes is None
+            or bool(
+                match.nodes & (episode.impact | episode.recorded | {episode.anchor})
+            )
+        )
+        and (match.checks is None or finding.check_id in match.checks)
+        and finding.check_id not in match.excluded_checks
         and all(labels.get(key) == value for key, value in match.labels.items())
         and (match.age is None or now - episode.opened_at >= match.age)
         and (

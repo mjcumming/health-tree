@@ -1,0 +1,41 @@
+id: scenario-80-affected-node-reporting
+title: An affected device preference follows the root problem through quiet hours
+covers: [scenario-80]
+start: '2026-09-28T23:00:00Z'
+settings:
+  settle: 0s
+  rejoin_grace: 0s
+  startup_grace: 0s
+  coalesce_count: 3
+  coalesce_window: 60s
+graph:
+  - id: hub
+    checks:
+      - {id: link, raise_hold: 0s, clear_hold: 0s, ttl: null, unknown_hold: 15m}
+  - id: device
+    depends_on: [hub]
+    checks:
+      - {id: state, raise_hold: 0s, clear_hold: 0s, ttl: null, unknown_hold: 15m}
+policy:
+  batch: 30s
+  recipients:
+    owner: {channels: [phone], quiet_hours: '22:00-07:00'}
+  digests: {}
+  rules:
+    - match: {nodes: [device], checks: [link]}
+      loudness: urgent
+      to: [owner]
+    - match: {nodes: [device], excluded_checks: [link]}
+      loudness: record
+    - match: {}
+      loudness: record
+steps:
+  - at: '2026-09-28T23:00:00Z'
+    ingest:
+      - {node: hub, check: link, status: fail, reason: unreachable}
+      - {node: device, check: state, status: fail, reason: unavailable}
+    expect:
+      bind: {problem: {opened: hub}}
+      events: [{opened: {anchor: hub, episode: $problem, recorded: [device]}}]
+      deliveries:
+        - {episode: $problem, to: owner, loudness: urgent, silent: false}

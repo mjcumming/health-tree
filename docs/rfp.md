@@ -20,6 +20,24 @@ This library is that layer, kept generic on purpose. Nodes, checks, dependencies
 
 The split is what keeps the design changeable. A new fault is a new check in the catalog. A new notification preference is configuration. A parent failure mutes the children that depend on it, and it does not rewrite their status. Folding this into a Home Assistant integration first would tie the model to one inventory and make the next exception a special case in the core.
 
+### Scheduled reporting extension (ADR 0035)
+
+Digests may select weekdays (Monday 0 to Sunday 6) and repeat still-open problems
+at every occurrence. Defaults remain daily and one-shot. Explicit rule recipients
+override the digest fallback recipient. A delivery identifies whether that
+recipient previously received the problem. Reports contain no resolved episodes
+and produce no delivery when empty. Shelving and opted-in acknowledgment suppress
+eligible entries. Late advances issue one current report, never a backlog.
+
+`Policy.reports(now)` returns read-only provisional next occurrences and eligible
+episode and recipient ids. Local schedules use the first repeated clock time and
+normalize nonexistent times forward. Node matches intersect anchor, recorded and
+impact ids. Optional check-id inclusion and exclusion refine each finding match;
+all ids are opaque strings. Rule ordering remains consumer-owned.
+
+Scenarios 79 and 80 cover weekly recurrence, restart, multiple recipients,
+resolution before a report, and affected-node preferences with check exceptions.
+
 ## 1. Problem
 
 Operators find out a subsystem is dead when something that depends on it misbehaves. Monitoring either watches every leaf and pages on each one, or watches nothing.

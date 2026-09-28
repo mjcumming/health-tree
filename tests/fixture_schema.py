@@ -32,7 +32,18 @@ _LOUDNESS = frozenset({"record", "digest", "notify", "urgent"})
 _RESOLUTION = frozenset({"cleared", "removed", "absorbed"})
 _QUIET_SCOPES = frozenset({"all", "node", "node_and_dependents"})
 _MATCH_KEYS = frozenset(
-    {"status", "importance", "reason", "category", "labels", "age", "due_within"}
+    {
+        "status",
+        "importance",
+        "reason",
+        "category",
+        "labels",
+        "age",
+        "due_within",
+        "nodes",
+        "checks",
+        "excluded_checks",
+    }
 )
 _EVENT_KINDS = frozenset({"probe", "opened", "updated", "resolved"})
 _EPISODE_FIELDS = frozenset(
@@ -272,7 +283,16 @@ def _digest(
     if not isinstance(value, dict):
         problems.append(f"{path} must be a mapping")
         return
-    _reject_unknown(value, {"at", "to"}, path, problems)
+    _reject_unknown(value, {"at", "to", "weekdays", "repeat_open"}, path, problems)
+    weekdays = value.get("weekdays", list(range(7)))
+    if (
+        not isinstance(weekdays, list)
+        or not weekdays
+        or any(type(day) is not int or day not in range(7) for day in weekdays)
+    ):
+        problems.append(f"{path}.weekdays must be weekdays 0 through 6")
+    if type(value.get("repeat_open", False)) is not bool:
+        problems.append(f"{path}.repeat_open must be boolean")
     at = value.get("at")
     if not isinstance(at, str) or _CLOCK.fullmatch(at) is None:
         problems.append(f"{path}.at must be HH:MM")

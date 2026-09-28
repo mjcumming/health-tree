@@ -380,7 +380,12 @@ def _policy(data: Mapping[str, Any]) -> PolicyConfig:
             for name, recipient in data["recipients"].items()
         },
         digests={
-            name: Digest(at=_clock(digest["at"]), to=digest["to"])
+            name: Digest(
+                at=_clock(digest["at"]),
+                to=digest["to"],
+                weekdays=frozenset(digest.get("weekdays", range(7))),
+                repeat_open=digest.get("repeat_open", False),
+            )
             for name, digest in data["digests"].items()
         },
         rules=tuple(_rule(rule) for rule in data["rules"]),
@@ -433,6 +438,9 @@ def _match(data: Mapping[str, Any]) -> Match:
         ),
         reason=strings("reason"),
         category=strings("category"),
+        nodes=strings("nodes"),
+        checks=strings("checks"),
+        excluded_checks=strings("excluded_checks") or frozenset(),
         labels=_strings(data.get("labels")),
         age=parse_duration(data["age"]) if "age" in data else None,
         due_within=(

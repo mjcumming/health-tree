@@ -1,0 +1,58 @@
+id: scenario-79-weekly-open-report
+title: Weekly reports repeat open problems for all selected recipients after restart
+covers: [scenario-79]
+start: '2026-09-28T12:00:00Z'
+settings:
+  settle: 0s
+  rejoin_grace: 0s
+  startup_grace: 0s
+  coalesce_count: 3
+  coalesce_window: 60s
+graph:
+  - id: device
+    checks:
+      - {id: state, raise_hold: 0s, clear_hold: 0s, ttl: null, unknown_hold: 15m}
+policy:
+  batch: 0s
+  recipients:
+    owner: {channels: [phone]}
+    backup: {channels: [phone]}
+  digests:
+    weekly: {at: '09:00', to: owner, weekdays: [6], repeat_open: true}
+  rules:
+    - match: {}
+      loudness: digest
+      digest: weekly
+      to: [owner, backup]
+steps:
+  - at: '2026-09-28T12:00:00Z'
+    ingest:
+      - {node: device, check: state, status: fail, reason: unavailable}
+    expect:
+      bind: {problem: {opened: device}}
+      events: [{opened: {anchor: device, episode: $problem}}]
+      deliveries: []
+  - at: '2026-09-29T09:00:00Z'
+    expect: {events: [], deliveries: []}
+  - at: '2026-10-04T09:00:00Z'
+    expect:
+      events: []
+      deliveries:
+        - {episode: $problem, to: owner, loudness: digest, digest: weekly}
+        - {episode: $problem, to: backup, loudness: digest, digest: weekly}
+  - at: '2026-10-05T12:00:00Z'
+    restart: true
+    expect: {events: [], deliveries: []}
+  - at: '2026-10-11T09:00:00Z'
+    expect:
+      events: []
+      deliveries:
+        - {episode: $problem, to: owner, loudness: digest, digest: weekly}
+        - {episode: $problem, to: backup, loudness: digest, digest: weekly}
+  - at: '2026-10-12T09:00:00Z'
+    ingest:
+      - {node: device, check: state, status: pass, reason: available}
+    expect:
+      events: [{resolved: {episode: $problem, resolution: cleared}}]
+  - at: '2026-10-18T09:00:00Z'
+    expect: {events: [], deliveries: []}

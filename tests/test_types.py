@@ -307,3 +307,16 @@ def test_records_reject_broken_invariants(
     """A record that cannot be true is never built."""
     with pytest.raises(ValueError, match=message):
         build()
+
+
+@pytest.mark.parametrize("days", [frozenset(), frozenset({7}), frozenset({-1})])
+def test_digest_rejects_invalid_weekdays(days: frozenset[int]) -> None:
+    """A digest always has a next valid local day."""
+    with pytest.raises(ValueError, match="weekdays"):
+        Digest(at=time(8), to="owner", weekdays=days)
+
+
+def test_digest_rejects_zoned_clock() -> None:
+    """The policy timezone is the only schedule timezone."""
+    with pytest.raises(ValueError, match="local clock"):
+        Digest(at=time(8, tzinfo=UTC), to="owner")

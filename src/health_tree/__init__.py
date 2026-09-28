@@ -5,4 +5,4 @@ and `health_tree.policy.Policy` are the entry points. `health_tree.types` holds
 the records they take and return.
 """
 
-__version__ = "0.4.1"
+__version__ = "0.5.0"

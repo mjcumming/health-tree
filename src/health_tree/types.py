@@ -457,6 +457,17 @@ class Digest:
 
     at: time
     to: str
+    weekdays: frozenset[int] = frozenset(range(7))
+    repeat_open: bool = False
+
+    def __post_init__(self) -> None:
+        """Require at least one valid local weekday and a naive clock."""
+        if not self.weekdays or any(
+            type(day) is not int or day not in range(7) for day in self.weekdays
+        ):
+            raise ValueError("weekdays must contain integers from 0 through 6")
+        if self.at.tzinfo is not None:
+            raise ValueError("digest at must be a local clock without a timezone")
 
 
 @dataclass(frozen=True, slots=True, kw_only=True)
@@ -475,6 +486,9 @@ class Match:
     labels: Mapping[str, str] = field(default_factory=dict)
     age: timedelta | None = None
     due_within: timedelta | None = None
+    nodes: frozenset[str] | None = None
+    checks: frozenset[str] | None = None
+    excluded_checks: frozenset[str] = frozenset()
 
     def __post_init__(self) -> None:
         """Reject negative ages and windows."""
@@ -572,6 +586,7 @@ class Notification:
     digest: str | None = None
     silent: bool = False
     cause: str = "open"
+    previously_reported: bool = False
 
     def __post_init__(self) -> None:
         """Name the digest exactly for digest deliveries. Never deliver `record`."""
