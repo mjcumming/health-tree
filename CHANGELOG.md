@@ -4,6 +4,12 @@ All notable changes to this project are documented here. The format follows [Kee
 
 ## [Unreleased]
 
+## [0.4.1] - 2026-09-28
+
+### Changed
+
+- Rewrite the README with badges, an install section and a runnable Python example, and move the adapter usage guide to `docs/usage.md`.
+
 ### Fixed
 
 - Point Homeostatic documentation links to its actual default branch.

@@ -1,14 +1,105 @@
 # Health Tree
 
-A platform-agnostic Python library for health across a dependency graph: nodes, checks, dependency-aware episodes, and an attention policy.
+**Tell a root failure from its symptoms, say what it takes down, and decide who hears about it and when.**
+
+[![PyPI](https://img.shields.io/pypi/v/health-tree.svg)](https://pypi.org/project/health-tree/)
+[![Downloads](https://img.shields.io/pypi/dm/health-tree.svg?label=downloads)](https://pypistats.org/packages/health-tree)
+[![Python](https://img.shields.io/pypi/pyversions/health-tree.svg)](https://pypi.org/project/health-tree/)
+[![CI](https://img.shields.io/github/actions/workflow/status/mjcumming/health-tree/ci.yml?branch=main&label=CI)](https://github.com/mjcumming/health-tree/actions/workflows/ci.yml)
+[![Security](https://img.shields.io/github/actions/workflow/status/mjcumming/health-tree/codeql.yml?branch=main&label=security)](https://github.com/mjcumming/health-tree/actions/workflows/codeql.yml)
+[![codecov](https://codecov.io/gh/mjcumming/health-tree/branch/main/graph/badge.svg)](https://codecov.io/gh/mjcumming/health-tree)
+[![Dependencies](https://img.shields.io/badge/dependencies-none-brightgreen.svg)](pyproject.toml)
+[![Typed: mypy strict](https://img.shields.io/badge/typed-mypy%20strict-blue.svg)](https://mypy.readthedocs.io/)
+[![Ruff](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/astral-sh/ruff/main/assets/badge/v2.json)](https://github.com/astral-sh/ruff)
+[![License: MIT](https://img.shields.io/github/license/mjcumming/health-tree.svg)](LICENSE)
+
+Health Tree is a platform-agnostic Python library for health across a dependency graph: nodes, checks, dependency-aware episodes, and an attention policy.
 
 A house, or any system you can draw as dependencies, can lose a whole machine, a controller, one device, a battery, or a login, or can fail to carry out a command. Usually nothing says which of those happened. You find out when the lights stop following motion, or when the music won't play with guests over. Monitoring tends to either page on every leaf or watch nothing.
 
-Health Tree is the layer that tells a root failure from its symptoms, says what the failure takes down, and decides who hears about it and when.
+Health Tree is the layer in between. It powers [Homeostatic](https://github.com/mjcumming/homeostatic), a Home Assistant integration, but has no Home Assistant code and no runtime dependencies, so it fits any system you can describe as a graph.
 
-Home Assistant is the first consumer. Its integration, [Homeostatic](https://github.com/mjcumming/homeostatic), lives in its own repository and is not part of this package.
+## Install
 
-> **Status: 0.4.0, early development.** The engine and the attention policy pass every story and scenario fixture. The design of record is [docs/rfp.md](docs/rfp.md) (version 0.8, draft for review). ADRs 0001 to 0034 are accepted or superseded. Real observation proofs remain outstanding. The package has no runtime dependencies. Synthetic scenarios establish library behavior; adapters must supply and validate real observations.
+```bash
+pip install health-tree
+```
+
+Requires Python 3.14. The package is pure Python with no dependencies.
+
+## Quick example
+
+A Zigbee coordinator drops, and the motion sensor and light behind it go unavailable with it. Health Tree opens **one** episode on the coordinator, records the devices as symptoms, and carries the importance of the function they serve:
+
+```python
+from datetime import UTC, datetime, timedelta
+
+from health_tree.engine import Engine
+from health_tree.types import (
+    Check, Edge, EngineSettings, Importance, Node, Observation, Status,
+)
+
+def link(ttl: timedelta | None = None) -> Check:
+    return Check(
+        check_id="link",
+        raise_hold=timedelta(0),
+        clear_hold=timedelta(minutes=2),
+        ttl=ttl,
+        unknown_hold=timedelta(minutes=5),
+    )
+
+engine = Engine(
+    EngineSettings(
+        settle=timedelta(seconds=30),
+        rejoin_grace=timedelta(minutes=2),
+        startup_grace=timedelta(0),
+        coalesce_count=3,
+        coalesce_window=timedelta(minutes=1),
+    )
+)
+now = datetime(2026, 9, 28, 22, 0, tzinfo=UTC)
+
+engine.register_many(
+    [
+        Node(node_id="zigbee", kind="integration", checks=(link(),)),
+        Node(node_id="hall_motion", kind="device",
+             depends_on=(Edge(to="zigbee"),), checks=(link(),)),
+        Node(node_id="hall_light", kind="device",
+             depends_on=(Edge(to="zigbee"),), checks=(link(),)),
+        Node(node_id="motion_lighting", kind="function",
+             importance=Importance.HIGH,
+             depends_on=(Edge(to="hall_motion"), Edge(to="hall_light"))),
+    ],
+    now,
+)
+engine.ingest_many(
+    [Observation(node_id=n, check_id="link", status=Status.PASS,
+                 reason="ok", observed_at=now)
+     for n in ("zigbee", "hall_motion", "hall_light")],
+    now,
+)
+
+# The coordinator drops, and both devices go unavailable with it.
+now += timedelta(minutes=1)
+events = engine.ingest_many(
+    [Observation(node_id=n, check_id="link", status=Status.FAIL,
+                 reason="unavailable", observed_at=now)
+     for n in ("zigbee", "hall_motion", "hall_light")],
+    now,
+)
+events += engine.advance(now + timedelta(seconds=30))
+
+for event in events:
+    episode = event.episode
+    print(type(event).__name__, episode.anchor, episode.importance.value,
+          sorted(episode.recorded))
+# EpisodeOpened zigbee high ['hall_light', 'hall_motion']
+
+print(engine.readiness(["motion_lighting"]).answer)
+# blocked
+```
+
+The engine never reads a clock or does I/O. You pass `now` into every call, feed it observations, and act on the events it returns. The attention policy (`health_tree.policy`) turns those events into deliveries: who to tell, how loudly, and when.
 
 ## Principles
 
@@ -33,11 +124,11 @@ It also covers operations that didn't do what they were told (the garage door wa
 
 It answers:
 
-- What is true of this node, from its own checks?
-- What broke first, and what does it take down?
-- Who should be told, how loudly, and when?
-- Why is this function not working? Is this set of functions ready?
-- What isn't being watched at all?
+- What is true of this node, from its own checks? (`explain`)
+- What broke first, and what does it take down? (episodes, `impact`)
+- Who should be told, how loudly, and when? (`Policy`)
+- Is this set of functions ready? (`readiness`, `rollup`)
+- What isn't being watched at all? (`coverage`)
 
 ## Model
 
@@ -52,7 +143,7 @@ The model is four jobs, not one hierarchy:
 
 A node is one capability: something that either works or doesn't, as its dependents see it. Functions ("garage", "motion lighting") are nodes too, which is what makes the `explain`, `impact`, `readiness`, `coverage`, and `rollup` queries possible.
 
-## Example
+## Behavior as executable stories
 
 Behavior is specified as YAML stories and scenarios that the test suite runs. This one is abridged from [story 8](tests/fixtures/story-08-garage-door.yaml):
 
@@ -93,88 +184,26 @@ The door is only a device, but the `garage` function that depends on it is `high
 - State survives restarts through snapshot and restore.
 - The library can't report the death of the process it runs in, so any deployment needs an external watchdog.
 
-## Registering a graph
-
-Atomic graph registration is available since 0.3.0.
-
-Use `engine.register_many(nodes, now)` when an adapter discovers multiple nodes
-at once. The batch adds or replaces those nodes, keeps unchanged nodes and
-retained check state, validates the final graph, and evaluates once. Empty
-batches, duplicate node ids, cycles, and reserved redundancy groups are rejected
-without changing state or time. `register(node, now)` has the same behavior for
-one node. Apply initial evidence separately with `ingest_many`.
-
-Only register monitored capabilities and the dependencies needed to describe
-them. Healthy monitored nodes belong in the graph so they can report a later
-failure. An unmonitored requirement belongs too: its missing evidence must remain
-visible to readiness and coverage. An adapter's wider inventory need not be a
-health graph. See [ADR 0033](docs/adr/0033-atomic-graph-registration.md).
-
-## Attention integration
-
-Use `Policy.handle` for engine events and `advance` for due work. Deliveries carry
-opaque recipients/channels and an output `cause` (`open`, `update`, `remind`,
-`escalate`, `activate`, or `digest`). The adapter renders and transports them.
-`explain(episode_id)` reads the evaluated rule, recipients and pending times without
-advancing time. Snapshot data stays an opaque persistence contract.
-
-Call `activate(now, context)` only when the owner starts attention afresh, such as
-enabling notifications after record-only monitoring. It preserves episode identity
-and age, restarts escalation, and returns or schedules initial requests subject to
-batching, quiet hours and shelves. Reminders begin with each recipient's actual
-request. An adapter can combine activation requests into summaries. Ordinary
-restart uses `restore`, which preserves attention clocks and reads policy schemas
-1, 2, or 3; new snapshots use schema 3. Scenarios 72 and 73 cover activation and
-reminder holds. Older policy snapshots restore without an acknowledgment.
-
-## Acknowledgment and temporary controls
-
-Acknowledgment means someone has seen an open problem. It does not change checks,
-readiness, episode identity, or the evidence required for recovery.
-
-- `policy.acknowledge(episode_id, now, actor_id="owner")` records the first UTC
-  time and optional opaque actor id, shared across recipients. Repeating the
-  request preserves that first record. `policy.acknowledgment(episode_id)` reads it.
-- A rule with `require_acknowledgment=True` stops its pending notifications,
-  reminders, digests, and age escalation after acknowledgment. Other rules keep
-  their configured behavior; silent updates and recovery still reach existing
-  recipients. Restore and activation preserve awareness. A new episode starts
-  unacknowledged.
-- `policy.unshelve(episode_id, now, context)` ends a shelf early and reevaluates
-  due attention under batching, quiet hours, and acknowledgment rules.
-- `engine.cancel_quiet(window, now)` removes one matching quiet window. Other
-  overlapping windows remain effective; observed health stays unchanged.
-
-The adapter authorizes and persists these actions. Transport publication, phone
-receipt, and dismissal never imply human acknowledgment. See [ADR 0034](docs/adr/0034-acknowledgment-and-control-cancellation.md)
-and executable scenarios 76–78 for restart, cancellation, and recovery behavior.
-
 ## Modules
 
 | Part | Module | Owns |
 | --- | --- | --- |
-| Engine | `health_tree` | Graph, checks, evaluation, inhibition, episodes, importance, quiet windows, snapshots, queries |
+| Engine | `health_tree.engine` | Graph, checks, evaluation, inhibition, episodes, importance, quiet windows, snapshots, queries |
 | Attention policy | `health_tree.policy` | Rules, recipients, loudness, quiet hours, digests, reminders, escalation, acknowledgment, shelving |
-| Conventions | `health_tree.conventions` | Standard reasons, categories, and label names, with no behavior |
-
-## Repository layout
-
-```text
-src/health_tree/     package (engine, policy, and conventions as they land)
-tests/               unit and property tests, and the fixture runner
-tests/fixtures/      stories and scenarios: the executable spec
-docs/rfp.md          design of record
-docs/adr/            architecture decision records
-```
+| Records | `health_tree.types` | The frozen records the engine and policy take and return |
 
 ## Documentation
 
+- [docs/usage.md](docs/usage.md): registering a graph, driving the attention policy, acknowledgment, and temporary controls.
 - [docs/rfp.md](docs/rfp.md): what the library does. Change it before changing behavior.
 - [docs/adr](docs/adr/README.md): why, one decision per record.
-- [Homeostatic UI notes](https://github.com/mjcumming/homeostatic/blob/feat/initial-integration/docs/ui.md): working notes for the integration's owner-facing surface, maintained in the integration repository. Not the library spec.
 - [CHANGELOG.md](CHANGELOG.md): what changed.
 - [CONTRIBUTING.md](CONTRIBUTING.md): workflow, checks, and releases. AI agents: [AGENTS.md](AGENTS.md).
 - [SECURITY.md](SECURITY.md): how to report a vulnerability.
+
+## Project status
+
+**0.4, alpha.** The engine and the attention policy pass every story and scenario fixture, and [Homeostatic](https://github.com/mjcumming/homeostatic) runs on it in a real-house pilot. The design of record is [docs/rfp.md](docs/rfp.md). ADRs 0001 to 0034 are accepted or superseded. Real observation proofs remain outstanding: synthetic scenarios establish library behavior, and adapters must supply and validate real observations. The API may still change before 1.0.
 
 ## Development
 
@@ -189,6 +218,16 @@ make check        # everything CI runs: hooks, tests with coverage, build
 ```
 
 `make help` lists the other targets. On Windows, the `make` targets need Git Bash or WSL, and each one is a short `uv run` command you can run directly.
+
+Repository layout:
+
+```text
+src/health_tree/     package: engine, policy, and types
+tests/               unit and property tests, and the fixture runner
+tests/fixtures/      stories and scenarios: the executable spec
+docs/rfp.md          design of record
+docs/adr/            architecture decision records
+```
 
 ## License
 
