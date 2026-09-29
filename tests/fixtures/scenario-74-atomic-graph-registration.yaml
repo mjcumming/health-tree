@@ -33,11 +33,21 @@ steps:
     expect:
       events: [{updated: {anchor: b, episode: $problem}}]
       queries:
+        impact:
+          b:
+            importance: normal
+            nodes: [{node: a, importance: normal}, {node: function, importance: normal}]
         readiness:
           a: {answer: blocked, names: [b]}
   - at: 2026-09-25T12:00:02Z
     restart: true
-    expect: {events: []}
+    expect:
+      events: []
+      queries:
+        impact:
+          b:
+            importance: normal
+            nodes: [{node: a, importance: normal}, {node: function, importance: normal}]
   - at: 2026-09-25T12:00:03Z
     ingest:
       - {node: b, check: state, status: pass, reason: available}

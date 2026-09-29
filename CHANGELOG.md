@@ -6,6 +6,11 @@ All notable changes to this project are documented here. The format follows [Kee
 
 ### Changed
 
+- Index graph edges and episode member ordering to reduce ordered observation
+  burst costs without changing events, deadlines, or snapshot formats. Add an
+  opt-in, reproducible engine benchmark with event-history and restart checks;
+  see [runtime measurements](docs/runtime-scaling.md).
+
 - Extend the situation reporter contract to permit expiring Home Assistant
   automation reports, with explicit unknown evidence after restart. Detection
   remains external; engine and policy behavior are unchanged (ADR 0036).

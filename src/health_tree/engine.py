@@ -122,6 +122,7 @@ class _Frame:
     findings: dict[str, list[Finding]]
     muted: dict[str, bool]
     roots: dict[str, frozenset[str]]
+    recordable: tuple[str, ...]
     gated: dict[str, bool] = field(default_factory=dict)
 
 
@@ -137,6 +138,8 @@ class Engine:
     __slots__ = (
         "_checks",
         "_closing",
+        "_dependency_index",
+        "_dependent_index",
         "_episodes",
         "_frame",
         "_ids",
@@ -145,6 +148,7 @@ class Engine:
         "_node_states",
         "_nodes",
         "_order",
+        "_positions",
         "_settings",
         "_windows",
     )
@@ -165,6 +169,9 @@ class Engine:
         self._closing: list[_Closing] = []
         self._windows: list[_Window] = []
         self._order: list[str] = []
+        self._positions: dict[str, int] = {}
+        self._dependency_index: dict[str, tuple[str, ...]] = {}
+        self._dependent_index: dict[str, list[str]] = {}
         self._last: datetime | None = None
         self._frame: _Frame | None = None
 
@@ -208,6 +215,7 @@ class Engine:
             self._node_states.setdefault(node.node_id, _NodeState())
         self._nodes = graph
         self._order = order
+        self._index_graph()
         return self._evaluate(now)
 
     def remove(self, node_id: str, now: datetime) -> list[Event]:
@@ -222,6 +230,7 @@ class Engine:
                 state.members.pop(node_id, None)
         self._windows = [w for w in self._windows if w.node_id != node_id]
         self._order = self._topological()
+        self._index_graph()
         return self._evaluate(now)
 
     def ingest(self, observation: Observation, now: datetime) -> list[Event]:
@@ -570,12 +579,20 @@ class Engine:
         for states in self._checks.values():
             yield from states.values()
 
-    def _dependencies(self, node_id: str) -> list[str]:
-        return [
-            edge.to
-            for edge in self._nodes[node_id].depends_on
-            if edge.to in self._nodes
-        ]
+    def _index_graph(self) -> None:
+        """Index only registered edges; forward references activate on registration."""
+        self._positions = {name: index for index, name in enumerate(self._order)}
+        self._dependency_index = {
+            name: tuple(edge.to for edge in node.depends_on if edge.to in self._nodes)
+            for name, node in self._nodes.items()
+        }
+        self._dependent_index = {name: [] for name in self._nodes}
+        for name, dependencies in self._dependency_index.items():
+            for dependency in dependencies:
+                self._dependent_index[dependency].append(name)
+
+    def _dependencies(self, node_id: str) -> tuple[str, ...]:
+        return self._dependency_index[node_id]
 
     def _topological(self, nodes: Mapping[str, Node] | None = None) -> list[str]:
         graph = self._nodes if nodes is None else nodes
@@ -616,9 +633,12 @@ class Engine:
 
     def _dependents(self, node_id: str) -> set[str]:
         found: set[str] = set()
-        for name in self._order:
-            if any(dep == node_id or dep in found for dep in self._dependencies(name)):
+        stack = list(self._dependent_index[node_id])
+        while stack:
+            name = stack.pop()
+            if name not in found:
                 found.add(name)
+                stack.extend(self._dependent_index[name])
         return found
 
     def _condition(self, node_id: str, frame: _Frame) -> NodeCondition:
@@ -648,8 +668,9 @@ class Engine:
     def _build_frame(self, now: datetime) -> _Frame:
         own: dict[str, Status] = {}
         watched: dict[str, bool] = {}
+        affecting_checks = {name: self._affecting(name) for name in self._order}
         for name in self._order:
-            affecting = self._affecting(name)
+            affecting = affecting_checks[name]
             watched[name] = bool(affecting)
             own[name] = max((s.effective for s in affecting), default=Status.UNKNOWN)
         for name in self._order:
@@ -663,7 +684,7 @@ class Engine:
         roots: dict[str, frozenset[str]] = {}
         for name in self._order:
             found = [
-                f for s in self._affecting(name) if (f := s.finding(now)) is not None
+                f for s in affecting_checks[name] if (f := s.finding(now)) is not None
             ]
             findings[name] = found
             failed_deps = [
@@ -692,6 +713,7 @@ class Engine:
             findings=findings,
             muted=muted,
             roots=roots,
+            recordable=tuple(name for name in self._order if muted[name]),
         )
 
     def _rejoin(self, node_id: str, now: datetime) -> None:
@@ -749,7 +771,7 @@ class Engine:
         assert state.holding_until is not None
         if frame.now < state.holding_until:
             return
-        still = sorted(state.holding, key=self._order.index)
+        still = sorted(state.holding, key=self._positions.__getitem__)
         state.holding.clear()
         state.holding_until = None
         if len(still) >= self._settings.coalesce_count:
@@ -975,8 +997,8 @@ class Engine:
 
     def _view(self, state: _EpisodeState, frame: _Frame) -> Episode:
         anchor = state.anchor
-        members = [name for name in self._order if name in state.members]
-        held = [name for name in self._order if name in state.holding]
+        members = sorted(state.members, key=self._positions.__getitem__)
+        held = sorted(state.holding, key=self._positions.__getitem__)
         reasons = [*frame.findings[anchor]]
         for member in [*members, *held]:
             reasons.extend(frame.findings[member])
@@ -993,10 +1015,8 @@ class Engine:
         sources = {anchor, *members, *held}
         recorded = {*members, *held} | {
             name
-            for name in self._order
-            if frame.muted[name]
-            and frame.roots[name] & sources
-            and not self._has_episode(name)
+            for name in frame.recordable
+            if frame.roots[name] & sources and not self._has_episode(name)
         }
         impact = self._dependents(anchor)
         return Episode(
