@@ -6,14 +6,22 @@ All notable changes to this project are documented here. The format follows [Kee
 
 ### Changed
 
+- Link the Homeostatic maintenance and health roadmap from the integration
+  boundary in the RFP. The roadmap retains the generic engine and records
+  adapter work separately; library behavior is unchanged.
+
+- Extend the situation reporter contract to permit expiring Home Assistant
+  automation reports, with explicit unknown evidence after restart. Detection
+  remains external; engine and policy behavior are unchanged (ADR 0036).
+
 - Index graph edges and episode member ordering to reduce ordered observation
   burst costs without changing events, deadlines, or snapshot formats. Add an
   opt-in, reproducible engine benchmark with event-history and restart checks;
   see [runtime measurements](docs/runtime-scaling.md).
 
-- Extend the situation reporter contract to permit expiring Home Assistant
-  automation reports, with explicit unknown evidence after restart. Detection
-  remains external; engine and policy behavior are unchanged (ADR 0036).
+- Rewrite the README for a reader arriving from Home Assistant: the problem told
+  through the house, a story from the executable spec, an example that ends in a
+  delivery, and how the library is built and tested.
 
 ## [0.5.0] - 2026-09-28
 

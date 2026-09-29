@@ -591,6 +591,10 @@ Each is tagged with its area.
 
 ## 11. Home Assistant integration, later
 
+The adapter's [maintenance and health roadmap](https://github.com/mjcumming/homeostatic/blob/main/docs/proposals/maintenance-and-health.md)
+tracks planned adapter features and future options built on this library.
+It does not change this RFP or establish new library behavior.
+
 Not part of this library. Recorded so the boundary stays visible. It is a separate repository, named `homeostatic`. As of 2026-09-25, the name is free on GitHub (`mjcumming/homeostatic`) and PyPI, with no colliding Home Assistant or HACS project found. `homeostat` was considered and set aside: the name is live at github.com/freol35241/homeostat, an active, unrelated home-automation project.
 
 - Nodes from the Supervisor host, the core, add-ons, config entries, devices, automations, scripts, and declared external hosts and functions.
