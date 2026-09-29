@@ -1,6 +1,6 @@
 # ADR 0031: Situation alerts are in scope, and the library never detects them
 
-**Status:** Accepted
+**Status:** Partially superseded by [0036](0036-automation-reported-situations.md) for the entity-only Home Assistant reporter choice
 **Date:** 2026-09-25
 **Deciders:** Michael Cumming
 

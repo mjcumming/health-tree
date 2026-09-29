@@ -34,12 +34,13 @@ Each file records one decision: the context, what was decided, the options that 
 | [0028](0028-engine-and-policy-semantics-the-rfp-left-open.md) | Engine and policy semantics the RFP left open | Accepted |
 | [0029](0029-public-queries-and-adapter-owned-views.md) | Public query records and adapter-owned views | Accepted |
 | [0030](0030-fixture-steps-for-runtime-changes-and-shelving.md) | Fixture steps for runtime graph changes and shelving | Accepted |
-| [0031](0031-situation-alerts-in-scope-detected-outside.md) | Situation alerts are in scope, and the library never detects them | Accepted |
+| [0031](0031-situation-alerts-in-scope-detected-outside.md) | Situation alerts are in scope, and the library never detects them | Reporter choice partially superseded by 0036 |
 | [0032](0032-a-situation-is-an-edgeless-node.md) | A situation is an edgeless node | Accepted |
 | [0033](0033-atomic-graph-registration.md) | Atomic graph registration | Accepted |
 | [0034](0034-acknowledgment-and-control-cancellation.md) | Policy-owned acknowledgment and early control cancellation | Accepted |
 
 | [0035](0035-scheduled-open-problem-reporting.md) | Scheduled open-problem reports and affected-node matching | Accepted |
+| [0036](0036-automation-reported-situations.md) | Accept expiring situation reports from external automations | Accepted |
 
 ## Writing one
 

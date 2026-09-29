@@ -4,6 +4,12 @@ All notable changes to this project are documented here. The format follows [Kee
 
 ## [Unreleased]
 
+### Changed
+
+- Extend the situation reporter contract to permit expiring Home Assistant
+  automation reports, with explicit unknown evidence after restart. Detection
+  remains external; engine and policy behavior are unchanged (ADR 0036).
+
 ## [0.5.0] - 2026-09-28
 
 ### Added
