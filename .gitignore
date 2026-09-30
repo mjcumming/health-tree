@@ -20,3 +20,5 @@ venv/
 .coverage.*
 coverage.xml
 htmlcov/
+/work/
+/Claude outputs/
