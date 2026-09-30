@@ -21,12 +21,13 @@ On Windows, uv and the `uv run` commands work in PowerShell. The `make` targets 
 
 ## Workflow
 
-1. Branch from `main`: `feat/…`, `fix/…`, `docs/…`, `test/…`, `chore/…`, or `ci/…`. The `no-commit-to-branch` hook blocks commits directly on `main`.
+The maintainer may commit small documentation and repository housekeeping changes directly on `main` after reviewing the diff and running relevant checks. CI runs after the push. Changes to behavior, APIs, dependencies, or release contents use this review path:
+
+1. Branch from `main`: `feat/…`, `fix/…`, `docs/…`, `test/…`, `chore/…`, or `ci/…`.
 2. If behavior changes, update the RFP. Bump its version and add a line to its changes section. Add an ADR, or supersede one, if a decision changes.
 3. Write the story or scenario fixture first, and watch it fail.
-4. Implement.
-5. Run `make check`.
-6. Open a pull request to `main` and fill in the template. CI must pass.
+4. Implement and run `make check`.
+5. Open a pull request to `main` and fill in the template. CI must pass.
 
 ## Checks
 
@@ -64,7 +65,7 @@ The release workflow checks that the tag matches the version, builds, publishes 
 
 - **PyPI.** Add a trusted publisher for project `health-tree`, owner `mjcumming`, repository `health-tree`, workflow `release.yml`, environment `pypi`.
 - **GitHub environment.** Create an environment named `pypi`. Requiring your own approval is optional.
-- **Branch protection.** Protect `main` and require the CI checks.
+- **Branch protection.** Block force pushes and deletion of `main`. Direct maintainer pushes remain available; CI runs on pushes and pull requests.
 - **Security reporting.** Turn on private vulnerability reporting.
 - **Coverage (optional).** Add a `CODECOV_TOKEN` secret for coverage reports.
 

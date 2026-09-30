@@ -70,4 +70,4 @@ docs/adr/                   decisions
 
 ## Commits
 
-Use Conventional Commits: `feat:`, `fix:`, `docs:`, `test:`, `refactor:`, `chore:`, `ci:`. One logical change per commit. Keep commits on branches, never directly on `main`.
+Use Conventional Commits: `feat:`, `fix:`, `docs:`, `test:`, `refactor:`, `chore:`, `ci:`. One logical change per commit. The maintainer may commit small documentation and repository housekeeping changes directly on `main` after reviewing the diff. Changes to behavior, APIs, dependencies, or release contents use a branch and pull request. The authorization rule above still applies to every commit and push.

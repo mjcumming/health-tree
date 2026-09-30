@@ -20,7 +20,7 @@ format:
 	uv run ruff check --fix
 
 lint:
-	SKIP=no-commit-to-branch uv run prek run --all-files
+	uv run prek run --all-files
 
 typecheck:
 	uv run mypy

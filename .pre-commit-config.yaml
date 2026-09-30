@@ -50,9 +50,6 @@ repos:
       - id: trailing-whitespace
         args:
           - --markdown-linebreak-ext=md
-      - id: no-commit-to-branch
-        args:
-          - --branch=main
   - repo: https://github.com/adrienverge/yamllint.git
     rev: v1.38.0
     hooks:
