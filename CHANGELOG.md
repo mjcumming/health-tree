@@ -4,6 +4,8 @@ All notable changes to this project are documented here. The format follows [Kee
 
 ## [Unreleased]
 
+## [0.5.1] - 2026-09-30
+
 ### Changed
 
 - Link the Homeostatic maintenance and health roadmap from the integration
