@@ -11,23 +11,23 @@ settings:
 policy:
   batch: 5s
   recipients:
-    michael:
+    resident:
       channels: [phone]
       quiet_hours: "22:30-07:00"
   digests:
     morning:
       at: "08:00"
-      to: michael
+      to: resident
   rules:
     - match: {category: maintenance}
       loudness: digest
       digest: morning
     - match: {status: fail, importance: [high, critical]}
       loudness: urgent
-      to: michael
+      to: resident
     - match: {status: fail}
       loudness: notify
-      to: michael
+      to: resident
     - match: {}
       loudness: digest
       digest: morning
@@ -71,7 +71,7 @@ steps:
     expect:
       events: []
       deliveries:
-        - {loudness: digest, digest: morning, episode: $sensor_ep, to: michael}
+        - {loudness: digest, digest: morning, episode: $sensor_ep, to: resident}
       queries:
         explain:
           lighting:

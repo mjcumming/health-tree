@@ -32,7 +32,7 @@ def rule(
     return Rule(
         match=Match(),
         loudness=loudness,
-        to=("michael",),
+        to=("resident",),
         digest=digest,
         remind_every=timedelta(minutes=5),
         escalate_after=escalate_after,
@@ -83,7 +83,7 @@ def test_new_urgent_rule_is_not_suppressed_by_previous_awareness() -> None:
         Rule(
             match=Match(reason=frozenset({"danger"})),
             loudness=Loudness.URGENT,
-            to=("michael",),
+            to=("resident",),
         ),
         rule(),
     )

@@ -11,13 +11,13 @@ settings:
 policy:
   batch: 30s
   recipients:
-    michael:
+    resident:
       channels: [phone]
   digests: {}
   rules:
     - match: {}
       loudness: notify
-      to: michael
+      to: resident
 graph:
   - id: printer
     checks:
@@ -49,4 +49,4 @@ steps:
     expect:
       events: []
       deliveries:
-        - {loudness: notify, episode: $printer_ep, to: michael}
+        - {loudness: notify, episode: $printer_ep, to: resident}

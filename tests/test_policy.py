@@ -163,10 +163,10 @@ def _policy(*rules: Rule, quiet: QuietHours | None = None, zone: str = "UTC") ->
         PolicyConfig(
             batch=timedelta(seconds=30),
             timezone=UTC if zone == "UTC" else ZoneInfo(zone),
-            recipients={"michael": Recipient(channels=("phone",), quiet_hours=quiet)},
-            digests={"morning": Digest(at=time(8), to="michael")},
+            recipients={"resident": Recipient(channels=("phone",), quiet_hours=quiet)},
+            digests={"morning": Digest(at=time(8), to="resident")},
             rules=rules
-            or (Rule(match=Match(), loudness=Loudness.URGENT, to=("michael",)),),
+            or (Rule(match=Match(), loudness=Loudness.URGENT, to=("resident",)),),
         )
     )
 
@@ -213,7 +213,7 @@ def test_lowering_to_record_drops_pending_and_stays_quiet() -> None:
         Rule(
             match=Match(status=frozenset({Status.FAIL})),
             loudness=Loudness.NOTIFY,
-            to=("michael",),
+            to=("resident",),
         ),
         Rule(match=Match(), loudness=Loudness.RECORD),
     )
@@ -230,12 +230,12 @@ def test_shelving_holds_every_kind_of_delivery() -> None:
         Rule(
             match=Match(reason=frozenset({"page"})),
             loudness=Loudness.URGENT,
-            to=("michael",),
+            to=("resident",),
         ),
         Rule(
             match=Match(reason=frozenset({"note"})),
             loudness=Loudness.NOTIFY,
-            to=("michael",),
+            to=("resident",),
         ),
         Rule(match=Match(), loudness=Loudness.DIGEST, digest="morning"),
     )
@@ -256,7 +256,7 @@ def test_reminders_repeat_sent_messages() -> None:
     """An open episode is reminded at its rule's interval."""
     policy = _policy(
         Rule(
-            match=Match(), loudness=Loudness.URGENT, to=("michael",), remind_every=HOUR
+            match=Match(), loudness=Loudness.URGENT, to=("resident",), remind_every=HOUR
         )
     )
     policy.handle(EpisodeOpened(episode=_episode()), T0, CONTEXT)
@@ -279,7 +279,7 @@ def test_escalation_needs_somewhere_to_go() -> None:
 def test_age_matches_raise_loudness_on_time() -> None:
     """ADR 0010: an age threshold is a deadline, and crossing it makes noise."""
     policy = _policy(
-        Rule(match=Match(age=HOUR), loudness=Loudness.URGENT, to=("michael",)),
+        Rule(match=Match(age=HOUR), loudness=Loudness.URGENT, to=("resident",)),
         Rule(match=Match(), loudness=Loudness.DIGEST, digest="morning"),
     )
     policy.handle(EpisodeOpened(episode=_episode()), T0, CONTEXT)
@@ -290,7 +290,7 @@ def test_age_matches_raise_loudness_on_time() -> None:
 def test_quiet_hours_that_do_not_wrap_midnight() -> None:
     """Quiet hours inside one day hold `notify` until they end."""
     policy = _policy(
-        Rule(match=Match(), loudness=Loudness.NOTIFY, to=("michael",)),
+        Rule(match=Match(), loudness=Loudness.NOTIFY, to=("resident",)),
         quiet=QuietHours(start=time(12), end=time(13)),
     )
     policy.handle(EpisodeOpened(episode=_episode()), T0, CONTEXT)
@@ -315,9 +315,9 @@ def test_snapshot_restores_through_json() -> None:
         Rule(
             match=Match(reason=frozenset({"page"})),
             loudness=Loudness.URGENT,
-            to=("michael",),
+            to=("resident",),
         ),
-        Rule(match=Match(), loudness=Loudness.NOTIFY, to=("michael",)),
+        Rule(match=Match(), loudness=Loudness.NOTIFY, to=("resident",)),
     )
     old = _policy(*rules)
     old.handle(EpisodeOpened(episode=_episode("paged", reason="page")), T0, CONTEXT)
@@ -361,7 +361,7 @@ def test_a_deadline_is_a_policy_deadline() -> None:
         Rule(
             match=Match(due_within=HOUR),
             loudness=Loudness.URGENT,
-            to=("michael",),
+            to=("resident",),
         ),
         Rule(match=Match(), loudness=Loudness.DIGEST, digest="morning"),
     )
@@ -377,7 +377,7 @@ def test_a_deadline_is_a_policy_deadline() -> None:
 def test_shelf_holds_reminders(loudness: Loudness) -> None:
     """Scenario 72: shelving holds a reminder already due."""
     policy = _policy(
-        Rule(match=Match(), loudness=loudness, to=("michael",), remind_every=HOUR)
+        Rule(match=Match(), loudness=loudness, to=("resident",), remind_every=HOUR)
     )
     policy.handle(EpisodeOpened(episode=_episode()), T0, CONTEXT)
     policy.advance(at(30), CONTEXT)
@@ -395,7 +395,7 @@ def test_activation_preserves_age_and_explanation_is_detached() -> None:
         Rule(
             match=Match(age=HOUR),
             loudness=Loudness.NOTIFY,
-            to=("michael",),
+            to=("resident",),
             escalate_after=HOUR,
         ),
         Rule(match=Match(), loudness=Loudness.RECORD),
@@ -423,10 +423,10 @@ def test_record_after_delivery_never_reminds() -> None:
         Rule(
             match=Match(age=HOUR),
             loudness=Loudness.RECORD,
-            to=("michael",),
+            to=("resident",),
             remind_every=HOUR,
         ),
-        Rule(match=Match(), loudness=Loudness.URGENT, to=("michael",)),
+        Rule(match=Match(), loudness=Loudness.URGENT, to=("resident",)),
     )
     policy.handle(EpisodeOpened(episode=_episode()), T0, CONTEXT)
     assert policy.advance(T0 + 2 * HOUR, CONTEXT) == []
@@ -435,7 +435,7 @@ def test_record_after_delivery_never_reminds() -> None:
 
 def test_legacy_policy_snapshot_restores() -> None:
     """Schema one has no attention origin or pending delivery cause."""
-    policy = _policy(Rule(match=Match(), loudness=Loudness.NOTIFY, to=("michael",)))
+    policy = _policy(Rule(match=Match(), loudness=Loudness.NOTIFY, to=("resident",)))
     policy.handle(EpisodeOpened(episode=_episode()), T0, CONTEXT)
     state = json.loads(json.dumps(policy.snapshot()))
     state["schema_version"] = 1
@@ -444,7 +444,7 @@ def test_legacy_policy_snapshot_restores() -> None:
         del tracked["sent_at"]
         for pending in tracked["pending"]:
             del pending["cause"]
-    restored = _policy(Rule(match=Match(), loudness=Loudness.NOTIFY, to=("michael",)))
+    restored = _policy(Rule(match=Match(), loudness=Loudness.NOTIFY, to=("resident",)))
     restored.restore(state, at(10))
     assert _kinds(restored.advance(at(30), CONTEXT)) == [("notify", "")]
 
@@ -455,7 +455,7 @@ def test_restore_crossing_escalation_emits_once() -> None:
         Rule(
             match=Match(),
             loudness=Loudness.NOTIFY,
-            to=("michael",),
+            to=("resident",),
             escalate_after=HOUR,
         ),
     )

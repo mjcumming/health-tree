@@ -75,9 +75,9 @@ def _policy(**changes: object) -> PolicyConfig:
     values: dict[str, object] = {
         "batch": MINUTE,
         "timezone": UTC,
-        "recipients": {"michael": Recipient(channels=("phone",))},
-        "digests": {"morning": Digest(at=time(8), to="michael")},
-        "rules": (Rule(match=Match(), loudness=Loudness.NOTIFY, to=("michael",)),),
+        "recipients": {"resident": Recipient(channels=("phone",))},
+        "digests": {"morning": Digest(at=time(8), to="resident")},
+        "rules": (Rule(match=Match(), loudness=Loudness.NOTIFY, to=("resident",)),),
         **changes,
     }
     return PolicyConfig(**values)  # type: ignore[arg-type]
@@ -130,7 +130,7 @@ def test_valid_records_build() -> None:
     assert (
         Notification(
             episode_id="e1",
-            recipient="michael",
+            recipient="resident",
             channels=("phone",),
             loudness=Loudness.DIGEST,
             digest="morning",
@@ -281,7 +281,7 @@ def test_valid_records_build() -> None:
         pytest.param(
             lambda: Notification(
                 episode_id="e1",
-                recipient="michael",
+                recipient="resident",
                 channels=(),
                 loudness=Loudness.RECORD,
             ),
@@ -291,7 +291,7 @@ def test_valid_records_build() -> None:
         pytest.param(
             lambda: Notification(
                 episode_id="e1",
-                recipient="michael",
+                recipient="resident",
                 channels=(),
                 loudness=Loudness.NOTIFY,
                 digest="morning",

@@ -11,13 +11,13 @@ settings:
 policy:
   batch: 30s
   recipients:
-    michael:
+    resident:
       channels: [phone]
   digests: {}
   rules:
     - match: {}
       loudness: urgent
-      to: michael
+      to: resident
 graph:
   - id: controller
     checks:
@@ -69,7 +69,7 @@ steps:
       events:
         - {opened: {anchor: d1, episode: $first_child}}
       deliveries:
-        - {loudness: urgent, episode: $first_child, to: michael}
+        - {loudness: urgent, episode: $first_child, to: resident}
   - at: 2026-09-24T12:01:10Z
     ingest:
       - {node: d2, check: cmd, status: fail, reason: command_failed}
@@ -79,7 +79,7 @@ steps:
       events:
         - {opened: {anchor: d2, episode: $second_child}}
       deliveries:
-        - {loudness: urgent, episode: $second_child, to: michael}
+        - {loudness: urgent, episode: $second_child, to: resident}
   - at: 2026-09-24T12:01:20Z
     ingest:
       - {node: d3, check: cmd, status: fail, reason: command_failed}
@@ -91,8 +91,8 @@ steps:
         - {resolved: {episode: $first_child, resolution: absorbed}}
         - {resolved: {episode: $second_child, resolution: absorbed}}
       deliveries:
-        - {loudness: urgent, episode: $group_ep, to: michael}
-        - {episode: $first_child, to: michael, resolution: absorbed}
-        - {episode: $second_child, to: michael, resolution: absorbed}
+        - {loudness: urgent, episode: $group_ep, to: resident}
+        - {episode: $first_child, to: resident, resolution: absorbed}
+        - {episode: $second_child, to: resident, resolution: absorbed}
       open:
         - {anchor: controller, episode: $group_ep}

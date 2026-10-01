@@ -11,23 +11,23 @@ settings:
 policy:
   batch: 30s
   recipients:
-    michael:
+    resident:
       channels: [phone]
       quiet_hours: "22:30-07:00"
   digests:
     morning:
       at: "08:00"
-      to: michael
+      to: resident
   rules:
     - match: {category: operation, importance: [high, critical]}
       loudness: urgent
-      to: michael
+      to: resident
     - match: {category: maintenance}
       loudness: digest
       digest: morning
     - match: {status: fail}
       loudness: notify
-      to: michael
+      to: resident
     - match: {}
       loudness: digest
       digest: morning
@@ -72,7 +72,7 @@ steps:
       events:
         - {opened: {anchor: garage_door, episode: $door_ep, importance: high, reasons: [command_failed]}}
       deliveries:
-        - {loudness: urgent, episode: $door_ep, to: michael}
+        - {loudness: urgent, episode: $door_ep, to: resident}
   - at: 2026-09-24T23:11:00Z
     ingest:
       - {node: garage_door, check: command, status: pass, reason: command_completed}

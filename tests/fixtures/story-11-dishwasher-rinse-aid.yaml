@@ -11,20 +11,20 @@ settings:
 policy:
   batch: 30s
   recipients:
-    michael:
+    resident:
       channels: [phone]
       quiet_hours: "22:30-07:00"
   digests:
     morning:
       at: "08:00"
-      to: michael
+      to: resident
   rules:
     - match: {category: maintenance}
       loudness: digest
       digest: morning
     - match: {status: fail}
       loudness: notify
-      to: michael
+      to: resident
 graph:
   - id: wifi
     kind: network
@@ -64,7 +64,7 @@ steps:
     expect:
       events: []
       deliveries:
-        - {loudness: digest, digest: morning, episode: $rinse_aid_ep, to: michael}
+        - {loudness: digest, digest: morning, episode: $rinse_aid_ep, to: resident}
   - at: 2026-09-25T09:00:00Z
     ingest:
       - {node: rinse_aid, check: level, status: pass, reason: refilled}

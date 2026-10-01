@@ -122,7 +122,7 @@ def _notify(
 ) -> Notification:
     return Notification(
         episode_id=episode_id,
-        recipient="michael",
+        recipient="resident",
         channels=("phone",),
         loudness=loudness,
         digest=digest,
@@ -132,7 +132,7 @@ def _notify(
 def _withdraw(episode_id: str, resolution: Resolution) -> ResolutionNotice:
     return ResolutionNotice(
         episode_id=episode_id,
-        recipient="michael",
+        recipient="resident",
         channels=("phone",),
         resolution=resolution,
     )

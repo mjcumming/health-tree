@@ -11,20 +11,20 @@ settings:
 policy:
   batch: 30s
   recipients:
-    michael:
+    resident:
       channels: [phone]
       quiet_hours: "22:30-07:00"
   digests:
     morning:
       at: "08:00"
-      to: michael
+      to: resident
   rules:
     - match: {category: operation, importance: [high, critical]}
       loudness: urgent
-      to: michael
+      to: resident
     - match: {status: warn, due_within: 24h}
       loudness: notify
-      to: michael
+      to: resident
     - match: {category: maintenance}
       loudness: digest
       digest: morning
@@ -32,10 +32,10 @@ policy:
       escalate_after: 30d
     - match: {status: [fail, unknown], importance: [high, critical]}
       loudness: urgent
-      to: michael
+      to: resident
     - match: {status: fail}
       loudness: notify
-      to: michael
+      to: resident
     - match: {}
       loudness: digest
       digest: morning
@@ -63,7 +63,7 @@ steps:
     expect:
       events: []
       deliveries:
-        - {loudness: notify, episode: $soon_ep, to: michael}
+        - {loudness: notify, episode: $soon_ep, to: resident}
   - at: 2026-09-24T14:59:59Z
     expect:
       events: []
@@ -76,4 +76,4 @@ steps:
     expect:
       events: []
       deliveries:
-        - {loudness: notify, episode: $later_ep, to: michael}
+        - {loudness: notify, episode: $later_ep, to: resident}
