@@ -71,7 +71,7 @@ class Importance(_Ordered):
 
 
 class Loudness(_Ordered):
-    """How a delivery reaches a person. Quiet hours lower it; escalation raises it."""
+    """How a delivery reaches a person. Quiet hours delay notify; escalation can raise it."""
 
     RECORD = "record"
     DIGEST = "digest"
@@ -444,7 +444,10 @@ class QuietHours:
 
 @dataclass(frozen=True, slots=True, kw_only=True)
 class Recipient:
-    """Someone deliveries go to, through opaque channel ids."""
+    """Someone deliveries go to, through opaque channel ids.
+
+    The sites tag is retained for a possible future policy but has no effect.
+    """
 
     channels: tuple[str, ...]
     quiet_hours: QuietHours | None = None

@@ -4,6 +4,14 @@ All notable changes to this project are documented here. The format follows [Kee
 
 ## [Unreleased]
 
+### Changed
+
+- Rewrite the README and usage guide, and add a concepts page. Every example runs against the current release.
+- Correct the RFP's status, module names and the placement of the scheduled reporting section (RFP 0.9).
+- Clarify that quiet hours delay `notify` without changing loudness.
+- Use a generic recipient id in the RFP examples and story fixtures.
+- Document that the retained recipient `sites` tag is dormant and has no routing effect.
+
 ## [0.5.1] - 2026-09-30
 
 ### Changed

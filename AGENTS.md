@@ -71,3 +71,16 @@ docs/adr/                   decisions
 ## Commits
 
 Use Conventional Commits: `feat:`, `fix:`, `docs:`, `test:`, `refactor:`, `chore:`, `ci:`. One logical change per commit. The maintainer may commit small documentation and repository housekeeping changes directly on `main` after reviewing the diff. Changes to behavior, APIs, dependencies, or release contents use a branch and pull request. The authorization rule above still applies to every commit and push.
+
+## Writing docs
+
+Docs are for people, not for the next agent.
+
+- Start from the reader's questions: what does it do, what would I use it for, why does it exist, how does it work, how do I set it up, and what doesn't it do. Get the answers from the code. Other docs may be stale.
+- One page, one job: a tutorial, a how-to, reference, or an explanation (Diátaxis). The README is the front door: what it is, why you'd want it, how to install it, and where to go next.
+- Write in a plain, professional voice. Never use the first person (no "I" or "my house"), and never name the maintainer in the docs. The product is the subject ("Homeostatic watches..."), and guides talk to the reader as "you". Contractions are fine where they read naturally. No hype, no slogans, no jokes.
+- Say each thing once. Caveats go in one limitations section, not in every paragraph.
+- Keep these out of user docs: inline ADR, rule or scenario numbers; version history ("since 0.3.0"); test counts and coverage; hard-wrapped prose.
+- Cut the AI tells: "X, not Y" contrasts, a bold label on every bullet, lists of three for rhythm, noun piles, passive voice that hides who does what, and stock words like robust, seamless, comprehensive, leverage and ensure.
+- When behavior changes, edit the section that owns it rather than bolting a new section on wherever is handy.
+- Don't invent facts. If something needs the maintainer's knowledge, ask before writing it.

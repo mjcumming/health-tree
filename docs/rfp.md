@@ -4,11 +4,11 @@ Design of record for this library. A Home Assistant integration is the first con
 
 | | |
 | --- | --- |
-| Version | 0.8 |
-| Date | 2026-09-26 |
-| Status | Draft for review, with ADRs 0024 to 0034 accepted. The library is at version 0.3.0, and the engine and policy pass every fixture. Real observation proofs remain outstanding. |
+| Version | 0.9 |
+| Date | 2026-10-01 |
+| Status | Draft for review, with ADRs 0024 to 0036 accepted. The library is at version 0.5.1, and the engine and policy pass every fixture. Real observation proofs remain outstanding. |
 | Decisions | [docs/adr](adr/README.md) |
-| Changes from 0.7 | Section 20 |
+| Changes from 0.8 | Section 21 |
 
 ## Purpose
 
@@ -19,24 +19,6 @@ Home Assistant already has the inventory: host, core, add-ons, integrations, dev
 This library is that layer, kept generic on purpose. Nodes, checks, dependencies, episodes, and an attention policy are the model. Home Assistant is one integration that fills them in. The core does not know what a battery, an add-on, or Frigate is. The integration registers a node and the checks that node actually has.
 
 The split is what keeps the design changeable. A new fault is a new check in the catalog. A new notification preference is configuration. A parent failure mutes the children that depend on it, and it does not rewrite their status. Folding this into a Home Assistant integration first would tie the model to one inventory and make the next exception a special case in the core.
-
-### Scheduled reporting extension (ADR 0035)
-
-Digests may select weekdays (Monday 0 to Sunday 6) and repeat still-open problems
-at every occurrence. Defaults remain daily and one-shot. Explicit rule recipients
-override the digest fallback recipient. A delivery identifies whether that
-recipient previously received the problem. Reports contain no resolved episodes
-and produce no delivery when empty. Shelving and opted-in acknowledgment suppress
-eligible entries. Late advances issue one current report, never a backlog.
-
-`Policy.reports(now)` returns read-only provisional next occurrences and eligible
-episode and recipient ids. Local schedules use the first repeated clock time and
-normalize nonexistent times forward. Node matches intersect anchor, recorded and
-impact ids. Optional check-id inclusion and exclusion refine each finding match;
-all ids are opaque strings. Rule ordering remains consumer-owned.
-
-Scenarios 79 and 80 cover weekly recurrence, restart, multiple recipients,
-resolution before a report, and affected-node preferences with check exceptions.
 
 ## 1. Problem
 
@@ -76,9 +58,9 @@ The library has three parts:
 
 | Part | Module | Owns |
 | --- | --- | --- |
-| Engine | `health_tree` | Graph, checks, evaluation, inhibition, episodes, importance, quiet windows, snapshots, queries |
+| Engine | `health_tree.engine` | Graph, checks, evaluation, inhibition, episodes, importance, quiet windows, snapshots, queries |
 | Attention policy | `health_tree.policy` | Rules, recipients, loudness, quiet hours, digests, reminders, escalation, shelving |
-| Conventions | `health_tree.conventions` | Standard reasons, categories, label keys, and annotation keys. Names and documentation only, never behavior |
+| Conventions | None. The names are documented in section 5 | Standard reasons, categories, label keys, and annotation keys. Names and documentation only, never behavior |
 
 The Home Assistant integration lives in its own repository, the same split as home-topology and Topomation. It has two parts:
 
@@ -183,7 +165,7 @@ A type is fixed only when the engine or the policy compares, orders, or escalate
 | --- | --- | --- |
 | `Status` | `pass` < `unknown` < `warn` < `fail` | `own` is the worst of a node's checks |
 | `Importance` | `low` < `normal` < `high` < `critical` | An episode takes the maximum over its impact |
-| `Loudness` | `record` < `digest` < `notify` < `urgent` | Quiet hours lower it; escalation raises it |
+| `Loudness` | `record` < `digest` < `notify` < `urgent` | Quiet hours delay `notify`; escalation can raise loudness |
 
 Worst-of order is `fail`, then `warn`, then `unknown`, then `pass`. `unknown` outranks `pass` so a dark check cannot be hidden by a sibling that passed.
 
@@ -194,12 +176,12 @@ Worst-of order is `fail`, then `warn`, then `unknown`, then `pass`. `unknown` ou
 | Field | Examples | Where the vocabulary lives |
 | --- | --- | --- |
 | Node `kind` | `host`, `service`, `integration`, `device`, `function`, `situation` | Integration |
-| Observation `reason` | `unreachable`, `auth_required`, `battery_low`, `capacity_low`, `update_pending`, `command_failed` | `health_tree.conventions`, extended by the catalog |
+| Observation `reason` | `unreachable`, `auth_required`, `battery_low`, `capacity_low`, `update_pending`, `command_failed` | Conventions, extended by the catalog |
 | Label `category` | `fault`, `maintenance`, `operation`, `situation` | Conventions |
 | Label `actionable_by` | `self`, `human` | Conventions |
 | Other labels | `area`, `site`, `integration` | Integration |
 | Annotations | `remedy`, `link`, `summary` | Catalog |
-| Recipient and channel ids | `michael`, `phone` | Configuration |
+| Recipient and channel ids | `resident`, `phone` | Configuration |
 
 The library never branches on `kind`, `reason`, labels, or annotations. The engine produces two reasons of its own: `stale` and `dependents_failing`.
 
@@ -323,7 +305,7 @@ The policy turns engine events into deliveries. It is pure, like the engine. It 
 
 Configuration is data with a fixed shape:
 
-- Recipients, each with channels (opaque ids), quiet hours, and optional sites. A recipient may be dynamic, such as whoever is home, resolved from context at send time.
+- Recipients, each with channels (opaque ids) and quiet hours. The optional `sites` tag is retained in the data model but has no effect on routing or delivery. A recipient may be dynamic, such as whoever is home, resolved from context at send time.
 - Digests, each with a schedule and a recipient.
 - Rules, in order. They are matched once for each reason of an episode, and the first match wins for that reason. A reason is matched on its own status, reason, `due_within`, category, and labels (its check's labels laid over the anchor node's), and on the episode's importance and age. A rule sets loudness, recipients, digest, reminder interval, and escalation after an age. The episode takes the loudest result over its reasons, with the rest of the rule that produced it. On a tie, the earlier rule wins. See ADR 0020.
 
@@ -351,20 +333,20 @@ The same ideas, as configuration in the integration:
 
 ```yaml
 recipients:
-  michael:
+  resident:
     channels: [phone]
     quiet_hours: "22:30-07:00"
   whoever_is_home:
     channels: [phone, kitchen_speaker]
 digests:
-  morning: {at: "08:00", to: michael}
+  morning: {at: "08:00", to: resident}
 rules:
   - match: {category: operation, importance: [high, critical]}
     loudness: urgent
     to: whoever_is_home
   - match: {status: warn, due_within: 24h}
     loudness: notify
-    to: michael
+    to: resident
   - match: {category: maintenance}
     loudness: digest
     digest: morning
@@ -372,10 +354,10 @@ rules:
     escalate_after: 30d
   - match: {status: [fail, unknown], importance: [high, critical]}
     loudness: urgent
-    to: michael
+    to: resident
   - match: {status: fail}
     loudness: notify
-    to: michael
+    to: resident
   - match: {}
     loudness: digest
     digest: morning
@@ -417,6 +399,14 @@ Acknowledgment applies across recipients and channels. An acknowledged episode r
 `Policy.unshelve(episode_id, now, context)` removes a shelf and processes due attention under current rules and quiet hours. A known unshelved episode is a no-op. Removing a shelf does not bypass the original batch delay. `Engine.cancel_quiet(window, now)` removes the first window matching scope, node, and original expiry, then reevaluates; other overlapping windows remain. No matching window is a no-op apart from normal time advancement. These actions never synthesize passing observations. The adapter uses its retained control ids to select one request and reject repeated cancellation.
 
 Policy snapshot version 3 adds acknowledgment and the original due time of shelf-held deliveries. Versions 1 and 2 restore without acknowledgment. The engine's snapshot format is unchanged.
+
+### Scheduled reports
+
+Digests may select weekdays (Monday 0 to Sunday 6) and repeat still-open problems at every occurrence. Defaults remain daily and one-shot. Explicit rule recipients override the digest fallback recipient. A delivery identifies whether that recipient previously received the problem. Reports contain no resolved episodes and produce no delivery when empty. Shelving and opted-in acknowledgment suppress eligible entries. Late advances issue one current report, never a backlog. See ADR 0035.
+
+`Policy.reports(now)` returns read-only provisional next occurrences and eligible episode and recipient ids. Local schedules use the first repeated clock time and normalize nonexistent times forward. A rule's `nodes` match an episode when any of them is the episode's anchor, one of its recorded nodes, or in its impact. Optional check-id inclusion and exclusion refine each finding match; all ids are opaque strings. Rule ordering remains consumer-owned.
+
+Scenarios 79 and 80 cover weekly recurrence, restart, multiple recipients, resolution before a report, and affected-node preferences with check exceptions.
 
 ## 8. Interface and queries
 
@@ -591,7 +581,7 @@ Each is tagged with its area.
 
 ## 11. Home Assistant integration, later
 
-The adapter's [maintenance and health roadmap](https://github.com/mjcumming/homeostatic/blob/main/docs/proposals/maintenance-and-health.md)
+The adapter's [maintenance and health roadmap](https://github.com/mjcumming/homeostatic/blob/main/docs/roadmap.md)
 tracks planned adapter features and future options built on this library.
 It does not change this RFP or establish new library behavior.
 
@@ -735,3 +725,10 @@ The library is done when:
 - Policy-owned, explicit acknowledgment with opt-in rules, restart persistence, and read-only records; no change to evidence or recovery (ADR 0034).
 - Early cancellation of an episode shelf or one scoped quiet window, including overlapping controls and restored state.
 - Scenarios 76 to 78 cover acknowledgment, shelving cancellation, and overlapping maintenance cancellation.
+
+## 21. Changes from 0.8
+
+- Scheduled reports: digests can run on selected weekdays and repeat still-open problems, `Policy.reports(now)` forecasts the next reports, and rules can match affected nodes and check ids (ADR 0035). Scenarios 79 and 80 cover them. The text moves from Purpose into section 7.
+- An automation can report a situation directly, with a finite `ttl` that fresh reports renew (ADR 0036).
+- Clarifications with no change in behavior. Quiet hours delay `notify` and never lower loudness. The recipient `sites` tag is kept in the data model but has no effect. Examples use a generic recipient id.
+- Corrections with no change in behavior. Section 2 names the engine module `health_tree.engine`. There is no `health_tree.conventions` module: the conventions are names documented in section 5. Section 11 links to the current Homeostatic roadmap. The status line gives the current library version.

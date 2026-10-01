@@ -38,7 +38,6 @@ Each file records one decision: the context, what was decided, the options that 
 | [0032](0032-a-situation-is-an-edgeless-node.md) | A situation is an edgeless node | Accepted |
 | [0033](0033-atomic-graph-registration.md) | Atomic graph registration | Accepted |
 | [0034](0034-acknowledgment-and-control-cancellation.md) | Policy-owned acknowledgment and early control cancellation | Accepted |
-
 | [0035](0035-scheduled-open-problem-reporting.md) | Scheduled open-problem reports and affected-node matching | Accepted |
 | [0036](0036-automation-reported-situations.md) | Accept expiring situation reports from external automations | Accepted |
 

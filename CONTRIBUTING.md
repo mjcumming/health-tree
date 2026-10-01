@@ -1,8 +1,8 @@
 # Contributing
 
-The design of record is [docs/rfp.md](docs/rfp.md). Change that document before changing behavior. Decisions and their reasons are in [docs/adr](docs/adr/README.md).
+The design of record is [docs/rfp.md](docs/rfp.md). Change it before you change behavior. Decisions and their reasons are in [docs/adr](docs/adr/README.md).
 
-The core stays free of Home Assistant and of any catalog of device faults. A new fault is a check registered by an adapter.
+The core stays free of Home Assistant and of any catalog of device faults. A new fault is a check that an adapter registers.
 
 AI assistance is welcome. Whoever submits a change must have reviewed every line and be able to explain it. Agent instructions are in [AGENTS.md](AGENTS.md).
 
@@ -17,11 +17,11 @@ uv sync
 uv run prek install
 ```
 
-On Windows, uv and the `uv run` commands work in PowerShell. The `make` targets need Git Bash or WSL. Every target is a short `uv run` command you can run directly.
+On Windows, uv and the `uv run` commands work in PowerShell. The `make` targets don't run there, so use Git Bash or WSL for them. Every target is a short `uv run` command you can run directly.
 
 ## Workflow
 
-The maintainer may commit small documentation and repository housekeeping changes directly on `main` after reviewing the diff and running relevant checks. CI runs after the push. Changes to behavior, APIs, dependencies, or release contents use this review path:
+The maintainer can commit small documentation and repository housekeeping changes straight to `main` after reviewing the diff and running the relevant checks. CI runs after the push. Changes to behavior, APIs, dependencies, or release contents go through this review path:
 
 1. Branch from `main`: `feat/…`, `fix/…`, `docs/…`, `test/…`, `chore/…`, or `ci/…`.
 2. If behavior changes, update the RFP. Bump its version and add a line to its changes section. Add an ADR, or supersede one, if a decision changes.
@@ -31,7 +31,7 @@ The maintainer may commit small documentation and repository housekeeping change
 
 ## Checks
 
-These are what CI runs:
+CI runs these:
 
 ```bash
 uv run prek run --all-files   # ruff, ruff format, codespell, yamllint, zizmor, mypy, hygiene hooks
@@ -39,7 +39,7 @@ uv run pytest --cov           # tests, with branch coverage of at least 95 perce
 uv build                      # sdist and wheel
 ```
 
-Formatting is ruff's. Run `make format` before committing, or let the hooks fix files and stage them again.
+Ruff does the formatting. Run `make format` before you commit, or let the hooks fix the files and stage them again.
 
 ## Commit messages
 
@@ -59,13 +59,13 @@ For maintainers:
    git push origin vX.Y.Z
    ```
 
-The release workflow checks that the tag matches the version, builds, publishes to PyPI through trusted publishing, and creates the GitHub release from the changelog.
+The release workflow checks that the tag matches the version, builds the package, publishes it to PyPI through trusted publishing, and creates the GitHub release from the changelog.
 
 ### One-time repository setup
 
 - **PyPI.** Add a trusted publisher for project `health-tree`, owner `mjcumming`, repository `health-tree`, workflow `release.yml`, environment `pypi`.
-- **GitHub environment.** Create an environment named `pypi`. Requiring your own approval is optional.
-- **Branch protection.** Block force pushes and deletion of `main`. Direct maintainer pushes remain available; CI runs on pushes and pull requests.
+- **GitHub environment.** Create an environment named `pypi`. You don't have to require your own approval.
+- **Branch protection.** Block force pushes and deletion of `main`. The maintainer can still push directly, and CI runs on pushes and pull requests.
 - **Security reporting.** Turn on private vulnerability reporting.
 - **Coverage (optional).** Add a `CODECOV_TOKEN` secret for coverage reports.
 
@@ -77,4 +77,4 @@ The release workflow checks that the tag matches the version, builds, publishes 
 
 ## Scope
 
-This repository is the platform-agnostic library: the engine, the attention policy, conventions, tests, and documentation. Discovery, the catalog of checks, delivery, and configuration screens belong to the Home Assistant integration, which lives in its own repository.
+This repository is the platform-agnostic library: the engine, the attention policy, conventions, tests, and documentation. Discovery, the catalog of checks, delivery, and configuration screens belong to the Home Assistant integration, [Homeostatic](https://github.com/mjcumming/homeostatic), which lives in its own repository.
