@@ -319,6 +319,7 @@ def _rule(
             "remind_every",
             "escalate_after",
             "require_acknowledgment",
+            "route",
         },
         where,
         problems,
@@ -328,6 +329,8 @@ def _rule(
         and type(value["require_acknowledgment"]) is not bool
     ):
         problems.append(f"{where}.require_acknowledgment must be a boolean")
+    if "route" in value and not isinstance(value["route"], str):
+        problems.append(f"{where}.route must be a string")
     match = value.get("match")
     if not isinstance(match, dict):
         problems.append(f"{where}.match must be a mapping")
@@ -457,6 +460,17 @@ def _cycles(
             walk(node)
 
 
+def _activation_routes(step: dict[str, Any], path: str, problems: list[str]) -> None:
+    if "activate_routes" not in step:
+        return
+    if step.get("activate") is not True:
+        problems.append(f"{path}.activate_routes requires activate")
+    if not isinstance(step["activate_routes"], list) or not all(
+        isinstance(route, str) for route in step["activate_routes"]
+    ):
+        problems.append(f"{path}.activate_routes must be a list of strings")
+
+
 def _steps(
     value: object,
     *,
@@ -489,10 +503,12 @@ def _steps(
                 "ingest",
                 "shelve",
                 "acknowledge",
+                "rearm",
                 "unshelve",
                 "cancel_quiet",
                 "restart",
                 "activate",
+                "activate_routes",
                 "expect",
             },
             path,
@@ -513,6 +529,7 @@ def _steps(
             "ingest",
             "shelve",
             "acknowledge",
+            "rearm",
             "unshelve",
             "cancel_quiet",
         } & set(step)
@@ -545,10 +562,11 @@ def _steps(
                     acknowledgment["actor_id"], str
                 ):
                     problems.append(f"{path}.acknowledge.actor_id must be a string")
-        if "unshelve" in step:
-            if not has_policy:
-                problems.append(f"{path}.unshelve requires a policy")
-            _ref(step["unshelve"], bound, path, problems)
+        for control in ("rearm", "unshelve"):
+            if control in step:
+                if not has_policy:
+                    problems.append(f"{path}.{control} requires a policy")
+                _ref(step[control], bound, path, problems)
         if "cancel_quiet" in step:
             _quiet_window(
                 step["cancel_quiet"], nodes, None, f"{path}.cancel_quiet", problems
@@ -559,6 +577,7 @@ def _steps(
             _ingest(step["ingest"], nodes, path, problems)
         if "activate" in step and (step["activate"] is not True or not has_policy):
             problems.append(f"{path}.activate requires true and a policy")
+        _activation_routes(step, path, problems)
         if "restart" in step and step["restart"] is not True:
             problems.append(f"{path}.restart must be true")
         expect = step.get("expect")
@@ -873,7 +892,7 @@ def _deliveries(
             continue
         _reject_unknown(
             delivery,
-            {"loudness", "digest", "episode", "to", "resolution", "silent"},
+            {"loudness", "digest", "episode", "to", "resolution", "silent", "route"},
             path,
             problems,
         )

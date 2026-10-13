@@ -84,6 +84,8 @@ def test_checked_in_fixtures_match_the_schema() -> None:
         "scenario-78-cancel-maintenance.yaml",
         "scenario-79-weekly-open-report.yaml",
         "scenario-80-affected-node-reporting.yaml",
+        "scenario-81-independent-attention-routes.yaml",
+        "scenario-82-explicit-attention-rearming.yaml",
         "story-02-detector-hangs.yaml",
         "story-04-battery-digest.yaml",
         "story-06-ai-box.yaml",

@@ -1,0 +1,78 @@
+id: scenario-81-independent-attention-routes
+title: Immediate reminders and scheduled reports share awareness and survive restart
+covers: [scenario-81]
+start: '2026-10-12T07:00:00Z'
+settings:
+  settle: 0s
+  rejoin_grace: 0s
+  startup_grace: 0s
+  coalesce_count: 3
+  coalesce_window: 60s
+graph:
+  - id: device
+    checks:
+      - {id: state, raise_hold: 0s, clear_hold: 0s, ttl: null, unknown_hold: 15m}
+policy:
+  batch: 0s
+  recipients:
+    owner: {channels: [phone, email]}
+  digests:
+    morning: {at: '08:00', to: owner, repeat_open: true}
+  rules:
+    - route: immediate
+      match: {}
+      loudness: urgent
+      to: owner
+      remind_every: 30m
+      require_acknowledgment: true
+    - route: report
+      match: {}
+      loudness: digest
+      digest: morning
+steps:
+  - at: '2026-10-12T07:00:00Z'
+    ingest:
+      - {node: device, check: state, status: fail, reason: unavailable}
+    expect:
+      bind: {problem: {opened: device}}
+      events: [{opened: {anchor: device, episode: $problem}}]
+      deliveries:
+        - {episode: $problem, to: owner, route: immediate, loudness: urgent}
+  - at: '2026-10-12T07:30:00Z'
+    expect:
+      events: []
+      deliveries:
+        - {episode: $problem, to: owner, route: immediate, loudness: urgent}
+  - at: '2026-10-12T07:30:30Z'
+    activate: true
+    activate_routes: [report]
+    expect: {events: [], deliveries: []}
+  - at: '2026-10-12T07:31:00Z'
+    acknowledge: {episode: $problem, actor_id: owner}
+    expect:
+      events: []
+      deliveries:
+        - {episode: $problem, to: owner, route: immediate, loudness: urgent, silent: true}
+  - at: '2026-10-12T07:40:00Z'
+    restart: true
+    expect: {events: [], deliveries: []}
+  - at: '2026-10-12T08:00:00Z'
+    expect:
+      events: []
+      deliveries:
+        - {episode: $problem, to: owner, route: report, loudness: digest, digest: morning}
+  - at: '2026-10-13T08:00:00Z'
+    expect:
+      events: []
+      deliveries:
+        - {episode: $problem, to: owner, route: report, loudness: digest, digest: morning}
+  - at: '2026-10-13T08:01:00Z'
+    ingest:
+      - {node: device, check: state, status: pass, reason: available}
+    expect:
+      events: [{resolved: {episode: $problem, resolution: cleared}}]
+      deliveries:
+        - {episode: $problem, to: owner, route: immediate, resolution: cleared}
+        - {episode: $problem, to: owner, route: report, resolution: cleared}
+  - at: '2026-10-14T08:00:00Z'
+    expect: {events: [], deliveries: []}

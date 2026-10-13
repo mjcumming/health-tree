@@ -23,7 +23,7 @@ Each file records one decision: the context, what was decided, the options that 
 | [0017](0017-episode-ids-uuidv7-from-now.md) | Episode ids are UUIDv7 built from `now` | Accepted |
 | [0018](0018-durations-are-required.md) | Durations are required; the library has no timing defaults | Accepted |
 | [0019](0019-a-node-is-one-capability.md) | A node is one capability | Accepted |
-| [0020](0020-policy-matches-each-reason.md) | The policy matches each reason; the loudest wins | Accepted |
+| [0020](0020-policy-matches-each-reason.md) | The policy matches each reason; the loudest wins | Single decision partially superseded by 0037 |
 | [0021](0021-coalesced-members-decide-recovery.md) | One anchor, one episode; coalesced members decide recovery | Accepted |
 | [0022](0022-settle-gate-waits-only-on-doubt.md) | The settle gate waits only on dependencies in doubt | Accepted |
 | [0023](0023-readiness-reads-own-status.md) | Readiness reads observed status, and stale is not a failure | Superseded by 0025 |
@@ -40,6 +40,8 @@ Each file records one decision: the context, what was decided, the options that 
 | [0034](0034-acknowledgment-and-control-cancellation.md) | Policy-owned acknowledgment and early control cancellation | Accepted |
 | [0035](0035-scheduled-open-problem-reporting.md) | Scheduled open-problem reports and affected-node matching | Accepted |
 | [0036](0036-automation-reported-situations.md) | Accept expiring situation reports from external automations | Accepted |
+| [0037](0037-independent-attention-routes.md) | Independent attention routes share episode controls | Accepted |
+| [0038](0038-explicit-attention-rearming.md) | Caller-confirmed changes can explicitly rearm acknowledgment | Accepted |
 
 ## Writing one
 

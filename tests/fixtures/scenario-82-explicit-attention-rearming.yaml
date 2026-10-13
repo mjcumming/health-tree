@@ -1,0 +1,64 @@
+id: scenario-82-explicit-attention-rearming
+title: A confirmed change can request renewed awareness without resolving or unpausing
+covers: [scenario-82]
+start: '2026-10-13T07:00:00Z'
+settings:
+  settle: 0s
+  rejoin_grace: 0s
+  startup_grace: 0s
+  coalesce_count: 3
+  coalesce_window: 60s
+graph:
+  - id: device
+    checks:
+      - {id: state, raise_hold: 0s, clear_hold: 0s, ttl: null, unknown_hold: 15m}
+policy:
+  batch: 0s
+  digests: {}
+  recipients:
+    owner: {channels: [phone]}
+  rules:
+    - match: {}
+      loudness: urgent
+      to: owner
+      remind_every: 30m
+      require_acknowledgment: true
+steps:
+  - at: '2026-10-13T07:00:00Z'
+    ingest:
+      - {node: device, check: state, status: warn, reason: risk}
+    expect:
+      bind: {problem: {opened: device}}
+      events: [{opened: {anchor: device, episode: $problem}}]
+      deliveries: [{episode: $problem, to: owner, loudness: urgent}]
+  - at: '2026-10-13T07:01:00Z'
+    acknowledge: {episode: $problem, actor_id: owner}
+    expect:
+      events: []
+      deliveries: [{episode: $problem, to: owner, loudness: urgent, silent: true}]
+  - at: '2026-10-13T07:02:00Z'
+    rearm: $problem
+    expect:
+      events: []
+      deliveries: [{episode: $problem, to: owner, loudness: urgent}]
+  - at: '2026-10-13T07:03:00Z'
+    rearm: $problem
+    expect: {events: [], deliveries: []}
+  - at: '2026-10-13T07:04:00Z'
+    acknowledge: {episode: $problem, actor_id: owner}
+    expect:
+      events: []
+      deliveries: [{episode: $problem, to: owner, loudness: urgent, silent: true}]
+  - at: '2026-10-13T07:05:00Z'
+    shelve: {episode: $problem, until: '2026-10-13T07:10:00Z'}
+    expect: {events: [], deliveries: []}
+  - at: '2026-10-13T07:06:00Z'
+    rearm: $problem
+    expect: {events: [], deliveries: []}
+  - at: '2026-10-13T07:07:00Z'
+    restart: true
+    expect: {events: [], deliveries: []}
+  - at: '2026-10-13T07:10:00Z'
+    expect:
+      events: []
+      deliveries: [{episode: $problem, to: owner, loudness: urgent}]

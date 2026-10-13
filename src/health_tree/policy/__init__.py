@@ -13,8 +13,8 @@ recipient already has, silently. A resolution goes silently to whoever received
 the episode. An episode resolved before it was delivered is simply dropped.
 """
 
-from collections.abc import Iterable, Mapping
-from dataclasses import dataclass, field
+from collections.abc import Collection, Iterable, Mapping
+from dataclasses import dataclass, field, replace
 from datetime import datetime, time, timedelta
 
 from health_tree._codec import (
@@ -49,7 +49,7 @@ from health_tree.types import (
 )
 
 SCHEMA_VERSION = 3
-"""The version of the data `Policy.snapshot` returns."""
+"""The version of each route's snapshot and the legacy default-route snapshot."""
 
 _ZERO = timedelta(0)
 _DAY = timedelta(days=1)
@@ -88,7 +88,7 @@ class _Tracked:
     acknowledgment: Acknowledgment | None = None
 
 
-class Policy:
+class _RoutePolicy:
     """A pure state machine from engine events to deliveries.
 
     Args:
@@ -233,6 +233,20 @@ class Policy:
         if _acknowledged(tracked):
             tracked.pending.clear()
         return self._replace(tracked)
+
+    def rearm(
+        self, episode_id: str, now: datetime, context: PolicyContext
+    ) -> list[Delivery]:
+        """Begin a fresh acknowledgment round after a caller-confirmed change."""
+        tracked = self._tracked[episode_id]
+        self._tick(now)
+        if tracked.acknowledgment is None:
+            return []
+        tracked.acknowledgment = None
+        tracked.attention_since = now
+        tracked.last_sent = None
+        tracked.decision = self._decide(tracked.episode, now, now)
+        return self._announce(tracked, now, cause="rearm")
 
     def unshelve(
         self, episode_id: str, now: datetime, context: PolicyContext
@@ -672,6 +686,221 @@ class Policy:
         if quiet.start < quiet.end:
             return quiet.start <= clock < quiet.end
         return clock >= quiet.start or clock < quiet.end
+
+
+class Policy:
+    """Evaluate independent attention routes with shared episode controls.
+
+    Args:
+        config: Recipients, digests, ordered rules and the batch delay.
+    """
+
+    __slots__ = ("_config", "_routes")
+
+    def __init__(self, config: PolicyConfig) -> None:
+        """Partition rules by opaque route id, retaining their order."""
+        self._config = config
+        routes = dict.fromkeys(rule.route for rule in config.rules)
+        self._routes = {
+            route: _RoutePolicy(
+                replace(
+                    config,
+                    rules=tuple(rule for rule in config.rules if rule.route == route),
+                    digests={
+                        name: digest
+                        for name, digest in config.digests.items()
+                        if list(routes) == [""]
+                        or any(
+                            rule.route == route and rule.digest == name
+                            for rule in config.rules
+                        )
+                    },
+                )
+            )
+            for route in routes
+        }
+
+    def handle(
+        self, event: Event, now: datetime, context: PolicyContext
+    ) -> list[Delivery]:
+        """Evaluate an engine event in every attention route."""
+        return [
+            replace(delivery, route=route)
+            for route, policy in self._routes.items()
+            for delivery in policy.handle(event, now, context)
+        ]
+
+    def advance(self, now: datetime, context: PolicyContext) -> list[Delivery]:
+        """Request due notifications independently in each route."""
+        return [
+            replace(delivery, route=route)
+            for route, policy in self._routes.items()
+            for delivery in policy.advance(now, context)
+        ]
+
+    def activate(
+        self,
+        now: datetime,
+        context: PolicyContext,
+        *,
+        routes: Collection[str] | None = None,
+    ) -> list[Delivery]:
+        """Restart selected routes, or all routes, retaining episode controls."""
+        return [
+            replace(delivery, route=route)
+            for route, policy in self._routes.items()
+            if routes is None or route in routes
+            for delivery in policy.activate(now, context)
+        ]
+
+    def acknowledgment(self, episode_id: str) -> Acknowledgment | None:
+        """Read the acknowledgment shared by all routes of an episode."""
+        return next(iter(self._routes.values())).acknowledgment(episode_id)
+
+    def acknowledge(
+        self, episode_id: str, now: datetime, *, actor_id: str | None = None
+    ) -> list[Delivery]:
+        """Acknowledge the episode across all its routes."""
+        return [
+            replace(delivery, route=route)
+            for route, policy in self._routes.items()
+            for delivery in policy.acknowledge(episode_id, now, actor_id=actor_id)
+        ]
+
+    def shelve(self, episode_id: str, until: datetime, now: datetime) -> list[Delivery]:
+        """Hold every route's requests for an episode until the given time."""
+        return [
+            replace(delivery, route=route)
+            for route, policy in self._routes.items()
+            for delivery in policy.shelve(episode_id, until, now)
+        ]
+
+    def rearm(
+        self, episode_id: str, now: datetime, context: PolicyContext
+    ) -> list[Delivery]:
+        """Rearm an acknowledged episode across routes, retaining its shelf."""
+        return [
+            replace(delivery, route=route)
+            for route, policy in self._routes.items()
+            for delivery in policy.rearm(episode_id, now, context)
+        ]
+
+    def unshelve(
+        self, episode_id: str, now: datetime, context: PolicyContext
+    ) -> list[Delivery]:
+        """Release the episode's shelf across all routes."""
+        return [
+            replace(delivery, route=route)
+            for route, policy in self._routes.items()
+            for delivery in policy.unshelve(episode_id, now, context)
+        ]
+
+    def next_deadline(self) -> datetime | None:
+        """Return the earliest pending change across all routes."""
+        return min(
+            (
+                deadline
+                for policy in self._routes.values()
+                if (deadline := policy.next_deadline()) is not None
+            ),
+            default=None,
+        )
+
+    def explain(self, episode_id: str) -> JSONObject:
+        """Return the loudest overview and each named route's decision."""
+        explanations = {
+            route: policy.explain(episode_id) for route, policy in self._routes.items()
+        }
+        if list(explanations) == [""]:
+            return explanations[""]
+        for route, detail in explanations.items():
+            index = detail["rule_index"]
+            if isinstance(index, int):
+                detail["rule_index"] = [
+                    i
+                    for i, rule in enumerate(self._config.rules)
+                    if rule.route == route
+                ][index]
+        result = dict(
+            max(
+                explanations.values(),
+                key=lambda detail: _LADDER.index(Loudness(str(detail["loudness"]))),
+            )
+        )
+        for key in ("recipients", "sent_to"):
+            result[key] = strings_list(
+                sorted(
+                    {
+                        str(item)
+                        for d in explanations.values()
+                        for item in as_list(d[key])
+                    }
+                )
+            )
+        pending: JSONObject = {}
+        for detail in explanations.values():
+            for recipient, due in as_object(detail["pending"]).items():
+                if recipient not in pending or str(due) < str(pending[recipient]):
+                    pending[recipient] = due
+        result["pending"] = pending
+        result["require_acknowledgment"] = any(
+            bool(detail["require_acknowledgment"]) for detail in explanations.values()
+        )
+        result["routes"] = dict(explanations)
+        return result
+
+    def reports(self, now: datetime) -> list[JSONObject]:
+        """Forecast each route's scheduled reports without advancing time."""
+        return [
+            report | ({"route": route} if list(self._routes) != [""] else {})
+            for route, policy in self._routes.items()
+            for report in policy.reports(now)
+        ]
+
+    def snapshot(self) -> JSONObject:
+        """Persist independent route state, retaining the legacy default shape."""
+        states: JSONObject = {
+            route: policy.snapshot() for route, policy in self._routes.items()
+        }
+        if list(states) == [""]:
+            return as_object(states[""])
+        return {"schema_version": 4, "routes": states}
+
+    def restore(self, state: Mapping[str, JSONValue], now: datetime) -> None:
+        """Restore route history by identity and shared episode controls."""
+        if state.get("schema_version") not in {1, 2, 3, 4}:
+            raise ValueError(f"cannot restore schema {state.get('schema_version')!r}")
+        if state.get("schema_version") == 4:
+            states = as_object(state["routes"])
+            if not states:
+                raise ValueError("a policy snapshot needs at least one route")
+        else:
+            states = {"": dict(state)}
+        seed = as_object(next(iter(states.values())))
+        for route, policy in self._routes.items():
+            if route in states:
+                policy.restore(as_object(states[route]), now)
+            else:
+                policy.restore(_new_route_state(seed), now)
+
+
+def _new_route_state(state: JSONObject) -> JSONObject:
+    """Carry episode controls into a new route without copying delivery history."""
+    return state | {
+        "next_digest": {},
+        "tracked": [
+            as_object(item)
+            | {
+                "sent_to": [],
+                "sent_at": {},
+                "pending": [],
+                "digested": False,
+                "last_sent": None,
+                "attention_since": None,
+            }
+            for item in as_list(state["tracked"])
+        ],
+    }
 
 
 def _matches(match: Match, finding: Finding, episode: Episode, now: datetime) -> bool:

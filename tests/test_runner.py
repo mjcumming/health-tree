@@ -256,7 +256,13 @@ class ScriptedPolicy:
         """Deliver scripted digests."""
         return self.script.digests.get(now, [])
 
-    def activate(self, now: datetime, context: PolicyContext) -> list[Delivery]:
+    def activate(
+        self,
+        now: datetime,
+        context: PolicyContext,
+        *,
+        routes: Collection[str] | None = None,
+    ) -> list[Delivery]:
         """Record explicit activation."""
         self.script.calls.append(("activate", None, now))
         return []
@@ -270,6 +276,12 @@ class ScriptedPolicy:
         self, episode_id: str, now: datetime, *, actor_id: str | None = None
     ) -> list[Delivery]:
         """Record scripted awareness."""
+        return []
+
+    def rearm(
+        self, episode_id: str, now: datetime, context: PolicyContext
+    ) -> list[Delivery]:
+        """Begin scripted renewed awareness."""
         return []
 
     def unshelve(
