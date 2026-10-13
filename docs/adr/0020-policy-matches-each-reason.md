@@ -1,6 +1,6 @@
 # ADR 0020: The policy matches each reason; the loudest wins
 
-**Status:** Accepted
+**Status:** Partially superseded by [0037](0037-independent-attention-routes.md); matching remains unchanged within each route
 **Date:** 2026-09-24
 **Deciders:** Michael Cumming
 

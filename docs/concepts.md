@@ -164,7 +164,7 @@ The `batch` delay gives absorption and coalescing time to land before a `notify`
 
 ### Rules
 
-Rules are tried in order for each reason on the episode, and the first rule that matches a reason decides that reason's loudness. The episode takes the loudest result over all its reasons, along with the rest of that rule: its recipients, digest, reminders and escalation. On a tie, the earlier rule wins.
+Rules are grouped by their `route`, an opaque string that defaults to the empty string. Each route makes an independent decision, so the same episode can trigger an immediate notification and appear in a morning report. Within a route, rules are tried in order for each reason on the episode, and the first match decides that reason's loudness. The route takes the loudest result over all reasons, along with the rest of that rule: its recipients, digest, reminders and escalation. On a tie, the earlier rule wins. Routes run in the order they first appear in the configuration.
 
 A rule's `Match` can test the reason's status, reason, check id and labels, and how soon its `due_at` falls (`due_within`). The labels are the check's laid over the anchor node's, and `category` matches the `category` label. It can also test the episode's importance, its age, and the nodes it touches: its anchor, recorded nodes and impact. An empty `Match()` matches everything.
 
@@ -186,11 +186,11 @@ A `Digest` goes out at a clock time to one recipient, on the weekdays you choose
 
 ### Acknowledgment
 
-Acknowledging an episode records that someone has seen it: the first time, and an optional actor id, shared by every recipient. On a rule with `require_acknowledgment=True`, it stops that episode's reminders, pending notifications, digest entries and escalation. It never changes the episode, its checks or readiness. It ends when the episode resolves, and a new episode starts unacknowledged.
+Acknowledging an episode records that someone has seen it: the first time, and an optional actor id, shared by every recipient and route. For each route whose winning rule has `require_acknowledgment=True`, it stops reminders, pending notifications, digest entries and escalation. Other routes continue reporting the open problem. It never changes the episode, its checks or readiness. It ends when the episode resolves, and a new episode starts unacknowledged.
 
 ### Shelving
 
-Shelving holds one episode's notifications, reminders and digest entries until a time you choose, and unshelving ends the hold early. Silent updates and the resolution notice still reach anyone who already has the message. A shelf quiets an episode that's already open, where a quiet window stops episodes from opening at all.
+Shelving holds one episode's notifications, reminders and digest entries across every route until a time you choose, and unshelving ends the hold early. Silent updates and the resolution notice still reach anyone who already has the message. A shelf quiets an episode that's already open, where a quiet window stops episodes from opening at all.
 
 ### Activation
 
@@ -198,13 +198,15 @@ An adapter that has watched without notifying, and is now turning notifications 
 
 ### Deliveries
 
-The policy returns `Notification` and `ResolutionNotice` records. A resolution goes silently to everyone who heard about the episode, and an episode that resolves before anyone heard about it sends nothing. [Turn events into deliveries](usage.md#turn-events-into-deliveries) covers what the fields mean for your code.
+The policy returns `Notification` and `ResolutionNotice` records, each carrying its route. Use the episode id, route and recipient together to identify a message. A resolution goes silently to everyone who heard about the episode through each route, and an episode that resolves before anyone heard about it sends nothing. [Turn events into deliveries](usage.md#turn-events-into-deliveries) covers what the fields mean for your code.
 
 Decision records: [The attention policy is a pure library module](adr/0010-attention-policy-in-the-library.md), [The policy matches each reason; the loudest wins](adr/0020-policy-matches-each-reason.md), [Policy-owned acknowledgment](adr/0034-acknowledgment-and-control-cancellation.md) and [Scheduled open-problem reports](adr/0035-scheduled-open-problem-reporting.md).
 
 ## Snapshot and restore
 
 `snapshot()` on the engine and on the policy returns all of its state as JSON-compatible data with a schema version. After a restart, the adapter builds a new engine and policy with the same settings and configuration, registers the graph, and calls `restore(state, now)` on each. Open episodes keep their ids and carry on without a new `opened` event. An episode whose anchor is no longer in the graph resolves as `removed`. The policy keeps track of who has been told, pending deliveries, shelves and acknowledgments, and matches its rules again against the current configuration. Startup grace starts again at restore.
+
+Route ids preserve delivery history when rules are reordered. If the route configuration changes, existing routes retain their history and new routes inherit open episodes, acknowledgment and shelves without inheriting delivery history. Call `activate` after explicitly applying changed reporting settings to start attention for the current configuration.
 
 Decision records: [State survives restarts through snapshot and restore](adr/0011-snapshot-and-restore.md).
 

@@ -155,7 +155,13 @@ class PolicyLike(Protocol):
         """Move time forward."""
         ...
 
-    def activate(self, now: datetime, context: PolicyContext) -> list[Delivery]:
+    def activate(
+        self,
+        now: datetime,
+        context: PolicyContext,
+        *,
+        routes: Collection[str] | None = None,
+    ) -> list[Delivery]:
         """Restart attention for existing episodes."""
         ...
 
@@ -167,6 +173,12 @@ class PolicyLike(Protocol):
         self, episode_id: str, now: datetime, *, actor_id: str | None = None
     ) -> list[Delivery]:
         """Record awareness."""
+        ...
+
+    def rearm(
+        self, episode_id: str, now: datetime, context: PolicyContext
+    ) -> list[Delivery]:
+        """Request renewed awareness after a confirmed change."""
         ...
 
     def unshelve(
@@ -200,10 +212,12 @@ class Step:
     cancel_quiet: QuietWindow | None = None
     acknowledge: tuple[str, str | None] | None = None
     unshelve: str | None = None
+    rearm: str | None = None
     ingest: tuple[Observation, ...]
     shelve: tuple[str, datetime] | None
     restart: bool
     activate: bool
+    activate_routes: tuple[str, ...] | None = None
     expect: Mapping[str, Any]
 
 
@@ -346,6 +360,10 @@ def _step(data: Mapping[str, Any]) -> Step:
         ),
         restart=data.get("restart", False),
         activate=data.get("activate", False),
+        rearm=data.get("rearm"),
+        activate_routes=tuple(data["activate_routes"])
+        if "activate_routes" in data
+        else None,
         expect=data["expect"],
     )
 
@@ -412,6 +430,7 @@ def _rule(data: Mapping[str, Any]) -> Rule:
         to=(to,) if isinstance(to, str) else tuple(to),
         digest=data.get("digest"),
         require_acknowledgment=data.get("require_acknowledgment", False),
+        route=data.get("route", ""),
         remind_every=(
             parse_duration(data["remind_every"]) if "remind_every" in data else None
         ),
@@ -539,6 +558,12 @@ class _Run:
                         self._resolve(reference) or reference, step.at, actor_id=actor
                     )
                 )
+            if step.rearm is not None:
+                deliveries.extend(
+                    self.policy.rearm(
+                        self._resolve(step.rearm) or step.rearm, step.at, CONTEXT
+                    )
+                )
             if step.unshelve is not None:
                 deliveries.extend(
                     self.policy.unshelve(
@@ -546,7 +571,9 @@ class _Run:
                     )
                 )
             if step.activate:
-                deliveries.extend(self.policy.activate(step.at, CONTEXT))
+                deliveries.extend(
+                    self.policy.activate(step.at, CONTEXT, routes=step.activate_routes)
+                )
             deliveries.extend(self.policy.advance(step.at, CONTEXT))
         problems = self._bind(step.expect, events)
         problems += self._track(events)
@@ -837,6 +864,7 @@ class _Run:
         actual |= {
             "episode": delivery.episode_id,
             "to": delivery.recipient,
+            "route": delivery.route,
         }
         problems: list[str] = []
         for key, value in pattern.items():

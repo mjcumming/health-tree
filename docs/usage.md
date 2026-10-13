@@ -436,7 +436,36 @@ print(now, [describe(d) for d in step(engine.advance(now), now)])
 2026-09-30 13:00:00+00:00 ['digest to owner: morning']
 ```
 
-The library never says how to reach anyone. Each `Notification` names the episode, the recipient, the recipient's channel ids from your configuration, the loudness and a `cause`: `open`, `update`, `remind`, `escalate`, `activate` or `digest`. Turning that into a phone push or a spoken announcement is your code's job, and so is the text. A delivery carries only the episode id, so keep the latest `Episode` from the engine's events and build the message from its anchor, reasons and impact. Tag each message with its episode id so you can replace it in place. A notification with `silent=True` replaces the message the recipient already has without alerting again, and a `ResolutionNotice` updates or withdraws it. In a digest entry, `previously_reported` says whether that recipient has heard about the episode before.
+The library never says how to reach anyone. Each `Notification` names the episode, the route, the recipient, the recipient's channel ids from your configuration, the loudness and a `cause`: `open`, `update`, `remind`, `escalate`, `activate` or `digest`. Turning that into a phone push or a spoken announcement is your code's job, and so is the text. A delivery carries the episode id rather than the episode's details, so keep the latest `Episode` from the engine's events and build the message from its anchor, reasons and impact. Identify each message by `(delivery.episode_id, delivery.route, delivery.recipient)` so you can replace it in place without overwriting another route's message. A notification with `silent=True` replaces the message the recipient already has without alerting again, and a `ResolutionNotice` updates or withdraws it. In a digest entry, `previously_reported` says whether that recipient has heard about the episode through that route before.
+
+To notify immediately and also report the same open problem each morning, give the rules different routes. This configuration uses the existing recipient and time zone:
+
+```python
+from dataclasses import replace
+
+reporting = replace(
+    POLICY,
+    digests={"morning": Digest(at=time(8), to="owner", repeat_open=True)},
+    rules=(
+        Rule(
+            route="immediate",
+            match=Match(),
+            loudness=Loudness.URGENT,
+            to=("owner",),
+            remind_every=timedelta(minutes=30),
+            require_acknowledgment=True,
+        ),
+        Rule(
+            route="morning-report",
+            match=Match(),
+            loudness=Loudness.DIGEST,
+            digest="morning",
+        ),
+    ),
+)
+```
+
+Each route applies ordered matching independently. Acknowledgment stops the immediate route's reminders while the morning report continues; shelving holds both. With named routes, `policy.explain(episode_id)["routes"]` contains each route's decision and `policy.reports(now)` includes a `route` field on every report, including an empty string for the default route. The explanation's overview keeps the loudest result and combines recipients; use the individual route decisions to inspect their schedules.
 
 ## Acknowledge an episode
 
@@ -576,6 +605,8 @@ An ordinary restart uses `restore`, never `activate`.
 ## Save and restore across restarts
 
 `snapshot()` returns JSON-compatible data with a schema version, for the engine and the policy separately. Store both. After a restart, build a new engine with the same settings, register the graph, then restore its snapshot. Restore the policy's snapshot into a new `Policy` built from your current configuration; it matches its rules again.
+
+Keep route ids stable to preserve their delivery histories. When applying changed reporting settings, build the new policy, restore the old policy's snapshot, then call `activate(now, CONTEXT)` and handle its deliveries. New routes retain the episode's acknowledgment and shelf but start without delivery history.
 
 ```python
 import json

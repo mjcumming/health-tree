@@ -5,8 +5,8 @@ Design of record for this library. A Home Assistant integration is the first con
 | | |
 | --- | --- |
 | Version | 0.9 |
-| Date | 2026-10-01 |
-| Status | Draft for review, with ADRs 0024 to 0036 accepted. The library is at version 0.5.1, and the engine and policy pass every fixture. Real observation proofs remain outstanding. |
+| Date | 2026-10-13 |
+| Status | Draft for review, with ADRs 0024 to 0038 accepted. The library is at version 0.6.0, and the engine and policy pass every fixture. Real observation proofs remain outstanding. |
 | Decisions | [docs/adr](adr/README.md) |
 | Changes from 0.8 | Section 21 |
 
@@ -372,6 +372,12 @@ Within each reason the first match wins, so order carries meaning:
 
 Situations need no new policy fields. In this example a `high` or `critical` situation that reports `fail` is `urgent`, and a `normal` or `low` one is `notify` and waits for quiet hours. A rule that matches `category: situation` routes them separately, and it must sit above the rules it should win against.
 
+### Independent attention routes
+
+Rules may name an opaque string `route`, defaulting to the empty string. Each route independently applies the ordered matching and loudest-result rules above. The same episode can therefore notify immediately and also appear in scheduled reports. Route order is the order of first appearance in configuration. Notifications and resolution notices include the route; adapters include it in message identity. Acknowledgment and shelving apply to the episode across all routes. Routes without acknowledgment requirements continue reporting open problems after acknowledgment.
+
+`explain` retains the loudest overview, unions recipients and previously contacted recipients, and adds per-route explanations for named routes. Pending overview times use the earliest time for each recipient; each route retains its own pending times. With named routes, `reports` includes only the schedules referenced by each route and identifies the originating route on every report, including the empty-string default route. Snapshot version 4 stores route state by id. Existing configurations using only the default route keep version 3 snapshots and their original query shapes. Restoring earlier snapshots or a changed set of routes preserves episode acknowledgment and shelves; newly added routes have no delivery history. Consumers call `activate` to start attention explicitly after changing configuration. Scenario 81 covers concurrent immediate and scheduled delivery, restart, acknowledgment and resolution.
+
 ### Starting attention and inspecting policy
 
 `policy.activate(now, context)` restarts attention for the episodes already tracked,
@@ -383,6 +389,8 @@ old problem from immediately exhausting its escalation period when notifications
 are enabled. The adapter may combine activation deliveries into recipient summaries.
 Ordinary restart restores state and does not activate again.
 
+`policy.activate(now, context, routes={"changed-route"})` restarts only the selected route ids. Unselected routes retain their delivery history and reminder clocks. An empty collection or unknown route ids change nothing; omitting `routes` activates every route. Consumers use this selection when applying a reporting edit that affects only some routes.
+
 `policy.explain(episode_id)` returns the last evaluated decision, winning rule index
 (zero based), recipients, pending delivery times and attention start. It does not
 advance time or expose persistence internals. Notification `cause` is an open output
@@ -391,6 +399,10 @@ use it for presentation. Quiet hours and shelves also hold reminders; a record-o
 rule never sends one. Pending reminders are coalesced, not accumulated.
 
 ### Acknowledgment and ending controls early
+
+An empty rule list still retains the default route's episode awareness and public query shapes, with no notification requests.
+
+After handling an updated episode, a caller can use `Policy.rearm(episode_id, now, context)` to request renewed awareness of a confirmed change. It clears an existing acknowledgment across all routes and reevaluates attention from `now`, retaining shelves and episode identity. It announces according to each route's current rules. Without an acknowledgment it returns no deliveries. The library never infers when rearming is appropriate. Unknown episode ids raise `KeyError`; ordinary UTC and monotonic time requirements apply. Scenario 82 covers renewed awareness, idempotence without acknowledgment, shelving and restart.
 
 `Rule.require_acknowledgment` defaults to false. `Policy.acknowledge(episode_id, now, actor_id=None)` records the first acknowledgment of an open episode and returns silent updates for recipients who already received it. Repeated acknowledgment returns no deliveries and preserves the first actor and time. `Policy.acknowledgment(episode_id)` returns an immutable `Acknowledgment(episode_id, at, actor_id)` or `None`; unknown or resolved ids raise `KeyError`. The actor is an opaque string.
 
@@ -435,7 +447,8 @@ policy.shelve(episode_id, until, now) -> list[Delivery]
 policy.unshelve(episode_id, now, context) -> list[Delivery]
 policy.acknowledge(episode_id, now, *, actor_id=None) -> list[Delivery]
 policy.acknowledgment(episode_id) -> Acknowledgment | None
-policy.activate(now, context) -> list[Delivery]
+policy.rearm(episode_id, now, context) -> list[Delivery]
+policy.activate(now, context, *, routes=None) -> list[Delivery]
 policy.explain(episode_id) -> dict
 policy.next_deadline() -> datetime | None
 policy.snapshot() -> dict

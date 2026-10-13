@@ -4,6 +4,16 @@ All notable changes to this project are documented here. The format follows [Kee
 
 ## [Unreleased]
 
+## [0.6.0] - 2026-10-13
+
+### Added
+
+- Allow a caller to rearm an acknowledged issue after a confirmed change, preserving its identity and pauses across attention routes.
+
+- Independent attention routes allow immediate notification and scheduled reports for the same episode, with shared acknowledgment and shelving and separate delivery identities.
+- Selected-route activation lets consumers apply reporting edits without restarting unrelated notifications or reminder clocks.
+- Usage examples for combining immediate attention with recurring reports and preserving route identity across configuration changes and restarts.
+
 ### Changed
 
 - Rewrite the README and usage guide, and add a concepts page. Every example runs against the current release.

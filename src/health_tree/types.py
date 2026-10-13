@@ -510,6 +510,7 @@ class Rule:
     remind_every: timedelta | None = None
     escalate_after: timedelta | None = None
     require_acknowledgment: bool = False
+    route: str = ""
 
     def __post_init__(self) -> None:
         """Give a digest rule its digest and a sending rule its recipients."""
@@ -590,6 +591,7 @@ class Notification:
     silent: bool = False
     cause: str = "open"
     previously_reported: bool = False
+    route: str = ""
 
     def __post_init__(self) -> None:
         """Name the digest exactly for digest deliveries. Never deliver `record`."""
@@ -607,6 +609,7 @@ class ResolutionNotice:
     recipient: str
     channels: tuple[str, ...]
     resolution: Resolution
+    route: str = ""
 
 
 type Delivery = Notification | ResolutionNotice
