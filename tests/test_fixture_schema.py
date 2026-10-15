@@ -86,6 +86,7 @@ def test_checked_in_fixtures_match_the_schema() -> None:
         "scenario-80-affected-node-reporting.yaml",
         "scenario-81-independent-attention-routes.yaml",
         "scenario-82-explicit-attention-rearming.yaml",
+        "scenario-83-compatible-delivery-groups.yaml",
         "story-02-detector-hangs.yaml",
         "story-04-battery-digest.yaml",
         "story-06-ai-box.yaml",

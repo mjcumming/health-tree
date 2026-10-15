@@ -35,8 +35,14 @@ jobs:
             echo "Tag ${TAG} does not match version ${version} in pyproject.toml"
             exit 1
           fi
-      - name: Build
-        run: uv build
+      - name: Check and build
+        run: |
+          uv sync --locked
+          uv run --no-sync prek run --all-files --show-diff-on-failure
+          uv run --no-sync pytest --cov --cov-report=term-missing
+          uv build
+        env:
+          HYPOTHESIS_PROFILE: ci
       - name: Check distributions
         run: uvx twine check --strict dist/*
       - name: Upload distributions

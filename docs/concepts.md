@@ -202,6 +202,12 @@ The policy returns `Notification` and `ResolutionNotice` records, each carrying 
 
 Decision records: [The attention policy is a pure library module](adr/0010-attention-policy-in-the-library.md), [The policy matches each reason; the loudest wins](adr/0020-policy-matches-each-reason.md), [Policy-owned acknowledgment](adr/0034-acknowledgment-and-control-cancellation.md) and [Scheduled open-problem reports](adr/0035-scheduled-open-problem-reporting.md).
 
+### Grouped messages
+
+Several independent problems can share one continuing message. The optional `health_tree.delivery_groups.DeliveryGroups` reducer combines deliveries after the policy has authorized them. Your adapter assigns the same opaque group id only when complete delivery instructions are compatible. Recipient and channels remain separate. Subject assignment belongs to the adapter, so grouping needs no dependency edge and changes no health or issue identity.
+
+Each message carries the exact delivered members. Resolving one member silently updates the message with the survivors; resolving the last closes it. A later problem can alert even if the previous members were acknowledged. An acknowledgment action applies to the episode ids actually presented, and does not cover later members. Persist grouping state with your outbox so restart preserves the message key and membership.
+
 ## Snapshot and restore
 
 `snapshot()` on the engine and on the policy returns all of its state as JSON-compatible data with a schema version. After a restart, the adapter builds a new engine and policy with the same settings and configuration, registers the graph, and calls `restore(state, now)` on each. Open episodes keep their ids and carry on without a new `opened` event. An episode whose anchor is no longer in the graph resolves as `removed`. The policy keeps track of who has been told, pending deliveries, shelves and acknowledgments, and matches its rules again against the current configuration. Startup grace starts again at restore.

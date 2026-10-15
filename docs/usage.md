@@ -467,6 +467,41 @@ reporting = replace(
 
 Each route applies ordered matching independently. Acknowledgment stops the immediate route's reminders while the morning report continues; shelving holds both. With named routes, `policy.explain(episode_id)["routes"]` contains each route's decision and `policy.reports(now)` includes a `route` field on every report, including an empty string for the default route. The explanation's overview keeps the loudest result and combines recipients; use the individual route decisions to inspect their schedules.
 
+## Combine compatible deliveries into one message
+
+Use `DeliveryGroups` when several independent episodes concern the same subject and have compatible delivery instructions. Feed it deliveries that the policy has already authorized. Supply a group id for every `(episode_id, route)` pair; the reducer also partitions by recipient and exact channels. A matching phone destination alone is insufficient: different schedules, reminder rules or deliberately independent instructions need different group ids.
+
+This example starts with two authorized notifications:
+
+```python
+from health_tree.delivery_groups import DeliveryGroups
+
+groups = DeliveryGroups()
+notifications = [
+    Notification(
+        episode_id=identity,
+        route=route,
+        recipient="owner",
+        channels=("phone",),
+        loudness=Loudness.URGENT,
+    )
+    for identity, route in (("outage", "availability"), ("low", "reserve"))
+]
+messages = groups.apply(
+    notifications,
+    {
+        ("outage", "availability"): "equipment:immediate",
+        ("low", "reserve"): "equipment:immediate",
+    },
+)
+assert len(messages) == 1
+assert {item.episode_id for item in messages[0].members} == {"outage", "low"}
+```
+
+Use `message.key` as the stable transport identity. Render only `message.members`, using the latest episode details you retain, and honor `message.silent`. Partial recovery leaves the surviving members in a silent replacement. `message.closed` means the last delivered member has left; `message.changes` preserves the original resolution reasons. Removing a route with `groups.deactivate(routes=[route])` can also close a message, with no invented recovery reason. Moving a delivered member to another group or channels returns cleanup for its previous destination.
+
+An acknowledgment action must carry the exact member episode ids presented to that recipient, then acknowledge those episodes individually. Do not look up the group's newest membership when a person taps an older message: it may now contain a new problem they have not seen. Save `groups.snapshot()` with the transport outbox, and restore it with `groups.restore(snapshot)`. Restore sends nothing. Apply a complete event batch before sending to avoid transient open/close messages; retry deduplication remains the adapter's responsibility.
+
 ## Acknowledge an episode
 
 Call `policy.acknowledge` when a person says they've seen an episode. On a rule with `require_acknowledgment=True`, that stops the reminders; [Acknowledgment](concepts.md#acknowledgment) lists everything else it stops and leaves alone. This rule set repeats urgent alerts until someone acknowledges them:

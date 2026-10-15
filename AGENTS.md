@@ -9,6 +9,8 @@ health-tree is a platform-agnostic Python library for health across a dependency
 - [docs/rfp.md](docs/rfp.md) is the design of record. Behavior is whatever the RFP says. Change the RFP before changing behavior.
 - [docs/adr/README.md](docs/adr/README.md) lists the decisions and why they were made. Do not reverse an accepted ADR. Propose a new one that supersedes it.
 - Read only the sections a task needs. The RFP's table of contents and the ADR index are enough to find them.
+- Start work in the repository that owns it. Homeostatic UI, catalog, delivery and Home Assistant runtime work belongs in the sibling Homeostatic repository; read its `AGENTS.md` before editing there. Identify both repositories when a change crosses the boundary.
+- Follow [Complete a change](CONTRIBUTING.md#complete-a-change). One agent owns completion across affected repositories. Serialize overlapping implementation through an explicit handoff; parallel reviews and disjoint edits can continue. Preserve unrelated work.
 
 ## Hard rules
 
@@ -62,7 +64,7 @@ These follow Home Assistant core.
 ## Layout
 
 ```text
-src/health_tree/            engine (and, as they land, policy/ and conventions.py)
+src/health_tree/            engine, attention policy and public records
 tests/                      unit tests, property tests, fixtures
 docs/rfp.md                 design of record
 docs/adr/                   decisions

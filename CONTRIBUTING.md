@@ -17,7 +17,7 @@ uv sync
 uv run prek install
 ```
 
-On Windows, uv and the `uv run` commands work in PowerShell. The `make` targets don't run there, so use Git Bash or WSL for them. Every target is a short `uv run` command you can run directly.
+Use Linux or WSL for the full check suite. The `uv run` commands also work in PowerShell; native Windows tests need IANA time-zone data, which `uv run --with tzdata pytest --cov` supplies for that run. The `make` targets use Git Bash or WSL. Every target is a short `uv run` command you can run directly.
 
 ## Workflow
 
@@ -28,6 +28,17 @@ The maintainer can commit small documentation and repository housekeeping change
 3. Write the story or scenario fixture first, and watch it fail.
 4. Implement and run `make check`.
 5. Open a pull request to `main` and fill in the template. CI must pass.
+
+### Complete a change
+
+Keep each change small enough to review as one outcome. One person or agent owns completion across all affected repositories, including delegated work. Identify that owner, the governing decision, affected files and observable completion condition in the task's opening update.
+
+- Finish or explicitly park overlapping implementation before another task changes that subsystem. A handoff names the remaining work and files it owns. Parallel reviews, tests and disjoint edits can continue; preserve unrelated changes.
+- Read the owning RFP section and relevant decisions first. Resolve contradictions at their owning source before dependent edits. Accepted decisions remain binding; proposals and prototypes do not override them. When the maintainer changes a decision, record its supersession and update the behavior and executable coverage together.
+- Replacement includes removal of obsolete code, callers, routes, configuration paths, fixtures and guidance. Required compatibility or intentionally dormant behavior needs a concrete use and a linked decision. Discarded development configurations alone do not justify migration machinery; preserve published contracts and saved user data as required.
+- Verify the complete promised outcome, including integration boundaries, and inspect the final diff. Record any acceptance that remains unverified. When a recurring mistake can be checked mechanically, add the smallest useful check to the existing test or validation runner.
+- Keep unfinished acceptance in the [RFP acceptance section](docs/rfp.md#12-acceptance), implemented unreleased changes in the changelog, and published changes under their release. ADRs own rationale. Link to each owner; read changing versions, thresholds and file inventories from configuration or discovery instead of copying them into guidance.
+- Close with the result, verification and specific remaining work, including cross-repository adoption. State commit, release and installation status separately when relevant. Partial verification cannot close the whole outcome; external actions still require maintainer authorization.
 
 ## Checks
 
@@ -51,7 +62,7 @@ For maintainers:
 
 1. Move the `[Unreleased]` entries in `CHANGELOG.md` under `## [X.Y.Z] - YYYY-MM-DD`.
 2. Set the version in `pyproject.toml` and `src/health_tree/__init__.py`. A test keeps them equal.
-3. Merge to `main`.
+3. Merge to `main` and confirm the exact release revision passed CI.
 4. Tag it and push the tag:
 
    ```bash
@@ -59,7 +70,7 @@ For maintainers:
    git push origin vX.Y.Z
    ```
 
-The release workflow checks that the tag matches the version, builds the package, publishes it to PyPI through trusted publishing, and creates the GitHub release from the changelog.
+The release workflow checks that the tag matches the version, runs the required checks on that revision, builds the package, publishes it to PyPI through trusted publishing, and creates the GitHub release from the changelog.
 
 ### One-time repository setup
 

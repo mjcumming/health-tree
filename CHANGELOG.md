@@ -4,6 +4,18 @@ All notable changes to this project are documented here. The format follows [Kee
 
 ## [Unreleased]
 
+## [0.7.0] - 2026-10-14
+
+### Changed
+
+- Reconcile the specification's scenario inventory with executable coverage, and check their references together.
+- Require one owner across repositories, explicit handoffs for overlapping work, binding accepted decisions, retirement checks and complete-outcome verification. Keep decision, implementation and release status with their existing owners.
+- Run the required lint, typing and coverage checks on the tagged revision before publishing.
+
+### Added
+
+- Optional delivery grouping combines compatible notifications into a continuing message while retaining separate episodes, routing and acknowledgment. Partial recovery keeps the remaining problems visible; membership and message identity survive restart.
+
 ## [0.6.0] - 2026-10-13
 
 ### Added
