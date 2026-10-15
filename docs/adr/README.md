@@ -2,6 +2,8 @@
 
 Each file records one decision: the context, what was decided, the options that lost, and the consequences. The [RFP](../rfp.md) says what the library does. These say why.
 
+Acceptance records a decision. Implementation and release status belong in the [changelog](../../CHANGELOG.md); unfinished verification belongs in [RFP acceptance](../rfp.md#12-acceptance). Keep changing progress out of ADR status fields.
+
 | ADR | Decision | Status |
 | --- | --- | --- |
 | [0001](0001-record-architecture-decisions.md) | Record architecture decisions | Accepted |
@@ -42,6 +44,7 @@ Each file records one decision: the context, what was decided, the options that 
 | [0036](0036-automation-reported-situations.md) | Accept expiring situation reports from external automations | Accepted |
 | [0037](0037-independent-attention-routes.md) | Independent attention routes share episode controls | Accepted |
 | [0038](0038-explicit-attention-rearming.md) | Caller-confirmed changes can explicitly rearm acknowledgment | Accepted |
+| [0039](0039-consolidate-compatible-deliveries.md) | Compatible deliveries share messages while episodes remain independent | Accepted |
 
 ## Writing one
 

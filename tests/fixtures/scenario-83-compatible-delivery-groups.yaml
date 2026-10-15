@@ -1,0 +1,114 @@
+id: scenario-83-compatible-delivery-groups
+title: Independent problems share compatible messages through acknowledgment and recovery
+covers: [scenario-83]
+start: '2026-10-14T07:00:00Z'
+settings:
+  settle: 0s
+  rejoin_grace: 0s
+  startup_grace: 0s
+  coalesce_count: 3
+  coalesce_window: 60s
+graph:
+  - id: availability
+    checks:
+      - {id: state, raise_hold: 0s, clear_hold: 0s, ttl: null, unknown_hold: 15m}
+  - id: reserve
+    checks:
+      - {id: state, raise_hold: 0s, clear_hold: 0s, ttl: null, unknown_hold: 15m}
+policy:
+  batch: 0s
+  recipients:
+    owner: {channels: [phone]}
+  digests:
+    morning: {at: '08:00', to: owner, repeat_open: true}
+  rules:
+    - route: availability
+      match: {nodes: [availability]}
+      loudness: urgent
+      to: owner
+      remind_every: 30m
+      require_acknowledgment: true
+    - {route: availability, match: {}, loudness: record}
+    - route: reserve
+      match: {nodes: [reserve]}
+      loudness: urgent
+      to: owner
+      remind_every: 30m
+      require_acknowledgment: true
+    - {route: reserve, match: {}, loudness: record}
+    - route: report
+      match: {}
+      loudness: digest
+      digest: morning
+delivery_groups:
+  subjects: {availability: equipment, reserve: equipment}
+  routes: {availability: immediate, reserve: immediate, report: report}
+steps:
+  - at: '2026-10-14T07:00:00Z'
+    ingest:
+      - {node: availability, check: state, status: warn, reason: unavailable}
+      - {node: reserve, check: state, status: pass, reason: sufficient}
+    expect:
+      bind: {outage: {opened: availability}}
+      events: [{opened: {anchor: availability, episode: $outage}}]
+      grouped:
+        - group: equipment:immediate
+          silent: false
+          closed: false
+          members: [{episode: $outage, route: availability}]
+  - at: '2026-10-14T07:01:00Z'
+    acknowledge: {episode: $outage, actor_id: owner}
+    expect:
+      events: []
+      grouped:
+        - group: equipment:immediate
+          silent: true
+          members: [{episode: $outage, route: availability}]
+  - at: '2026-10-14T07:02:00Z'
+    ingest:
+      - {node: reserve, check: state, status: warn, reason: low}
+    expect:
+      bind: {low: {opened: reserve}}
+      events: [{opened: {anchor: reserve, episode: $low}}]
+      grouped:
+        - group: equipment:immediate
+          silent: false
+          members:
+            - {episode: $outage, route: availability}
+            - {episode: $low, route: reserve}
+  - at: '2026-10-14T07:03:00Z'
+    restart: true
+    expect: {events: [], grouped: []}
+  - at: '2026-10-14T07:04:00Z'
+    ingest:
+      - {node: availability, check: state, status: pass, reason: available}
+    expect:
+      events: [{resolved: {episode: $outage, resolution: cleared}}]
+      grouped:
+        - group: equipment:immediate
+          silent: true
+          closed: false
+          members: [{episode: $low, route: reserve}]
+  - at: '2026-10-14T07:05:00Z'
+    acknowledge: {episode: $low, actor_id: owner}
+    expect:
+      events: []
+      grouped:
+        - group: equipment:immediate
+          silent: true
+          members: [{episode: $low, route: reserve}]
+  - at: '2026-10-14T08:00:00Z'
+    expect:
+      events: []
+      grouped:
+        - group: equipment:report
+          silent: false
+          members: [{episode: $low, route: report}]
+  - at: '2026-10-14T08:01:00Z'
+    ingest:
+      - {node: reserve, check: state, status: pass, reason: sufficient}
+    expect:
+      events: [{resolved: {episode: $low, resolution: cleared}}]
+      grouped:
+        - {group: equipment:immediate, silent: true, closed: true, members: []}
+        - {group: equipment:report, silent: true, closed: true, members: []}

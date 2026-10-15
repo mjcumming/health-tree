@@ -4,11 +4,11 @@ Design of record for this library. A Home Assistant integration is the first con
 
 | | |
 | --- | --- |
-| Version | 0.9 |
-| Date | 2026-10-13 |
-| Status | Draft for review, with ADRs 0024 to 0038 accepted. The library is at version 0.6.0, and the engine and policy pass every fixture. Real observation proofs remain outstanding. |
+| Version | 0.10 |
+| Date | 2026-10-14 |
+| Status | Draft for review, with ADRs 0024 to 0039 accepted. The library implementation is at version 0.7.0, including delivery grouping. Real observation proofs remain outstanding. |
 | Decisions | [docs/adr](adr/README.md) |
-| Changes from 0.8 | Section 21 |
+| Changes from 0.9 | Section 22 |
 
 ## Purpose
 
@@ -378,6 +378,14 @@ Rules may name an opaque string `route`, defaulting to the empty string. Each ro
 
 `explain` retains the loudest overview, unions recipients and previously contacted recipients, and adds per-route explanations for named routes. Pending overview times use the earliest time for each recipient; each route retains its own pending times. With named routes, `reports` includes only the schedules referenced by each route and identifies the originating route on every report, including the empty-string default route. Snapshot version 4 stores route state by id. Existing configurations using only the default route keep version 3 snapshots and their original query shapes. Restoring earlier snapshots or a changed set of routes preserves episode acknowledgment and shelves; newly added routes have no delivery history. Consumers call `activate` to start attention explicitly after changing configuration. Scenario 81 covers concurrent immediate and scheduled delivery, restart, acknowledgment and resolution.
 
+### Consolidating compatible deliveries
+
+The optional `health_tree.delivery_groups.DeliveryGroups` reducer consolidates already-authorized policy deliveries into messages. `apply(deliveries, group_ids)` accepts a complete batch and an explicit mapping from `(episode_id, route)` to an opaque group id for each notification. The caller establishes compatibility of complete delivery instructions. A shared destination alone does not establish compatibility. Recipient and exact channel tuple additionally partition groups. Neither health, dependency edges, episodes nor policy timing changes.
+
+Each immutable `DeliveryGroup` exposes its group id, recipient, channels, a stable transport key, current member notifications, original delivery changes and whether the replacement is silent. `closed` is true only when no members remain. A noisy notification makes its final group noisy. Partial resolution produces a silent replacement with surviving members; final resolution closes the message with the original resolution notices. Ending delivery or moving a member cannot manufacture a recovery reason. A transient member opened and resolved inside the same batch produces no message if that group had no previous members.
+
+Acknowledgment targets the exact episode ids included in the presented message, through ordinary `Policy.acknowledge` calls. Later members remain unacknowledged. The reducer includes only deliveries the policy has authorized, preserving distinct routes, recipients, schedules and shelves. `deactivate(routes=None)` silently removes selected routes, or all routes when omitted. Moving a delivered member to a new group or channels updates both its old and new message. Snapshot and restore preserve membership and transport keys without sending; the caller persists this state together with its outbox and owns retry deduplication. See ADR 0039.
+
 ### Starting attention and inspecting policy
 
 `policy.activate(now, context)` restarts attention for the episodes already tracked,
@@ -592,6 +600,13 @@ Each is tagged with its area.
 77. **Shelving cancellation.** A batched notify is held by a shelf. Ending it early releases due work while respecting quiet hours and the original batch delay. Repeating cancellation of a known unshelved episode sends nothing extra.
 78. **Maintenance cancellation.** Two overlapping quiet windows cover a failing node. Canceling one leaves the other in force through restart. Canceling the second opens the still-observed failure, without changing its own status.
 
+79. **Scheduled reports.** A weekly digest delivers an open problem to every selected recipient on its configured weekday. The same problem appears again the following week after restart. Recovery removes it from later reports.
+80. **Affected-node matching.** A hub fails and records a dependent device's failure. A rule matching that affected device and the hub's failing check delivers the hub's episode as urgent through quiet hours. The device does not need a separate episode for its reporting preference to apply.
+81. **Independent attention routes.** One route immediately notifies and reminds until acknowledgment, while another reports the same open problem on a recurring schedule. Acknowledgment and restart preserve episode identity and leave the report route active. Recovery withdraws both routes' delivered messages and ends later reports.
+82. **Explicit attention rearming.** Rearming an acknowledged episode requests renewed attention without resolving it. A repeated rearm without another acknowledgment sends nothing. Rearming during shelving respects the shelf through restart and requests attention when it ends.
+
+83. **Delivery grouping.** Two independent conditions share a subject and compatible immediate delivery instructions. The first opens one message and is acknowledged. A later failure of the second joins that message and requests new attention. Restart retains membership. Recovery of the first silently updates the message while the second remains actionable. A separately configured scheduled report remains independent. Only final recovery closes each delivered message. Grouping changes no episode identity, evidence or acknowledgment.
+
 ## 11. Home Assistant integration, later
 
 The adapter's [maintenance and health roadmap](https://github.com/mjcumming/homeostatic/blob/main/docs/roadmap.md)
@@ -647,11 +662,13 @@ Each trace records the device and integration versions, source timestamps or seq
 
 The library is done when:
 
-- Every story in section 9 and every scenario in section 10 passes as a fixture, without a Home Assistant import.
+- Every story in section 9 and every scenario in section 10 passes as a fixture, without a Home Assistant import. Scenarios 12 and 26 (rejected registrations) and 38 (generated-id ordering) use unit tests in `tests/test_engine.py`. Fixture `covers` entries must match the story and scenario inventory with only those exceptions.
 - Traces from the observation proofs in section 11 replay as fixtures and pass.
 - A new fault can be introduced by registering a check with a new reason in a test adapter, without editing the core.
 - A new notification preference can be introduced by configuration alone.
 - The package has no runtime dependencies, passes mypy in strict mode, and reads no clock.
+
+Synthetic story and scenario coverage is checked by `tests/test_fixtures.py`; replay of real observation proofs remains pending. Optional delivery grouping is implemented in `src/health_tree/delivery_groups.py` and covered by `tests/fixtures/scenario-83-compatible-delivery-groups.yaml`. The [changelog](../CHANGELOG.md) owns release status, and the [Homeostatic roadmap](https://github.com/mjcumming/homeostatic/blob/main/docs/roadmap.md#current-work) owns downstream adoption and release prerequisites.
 
 ## 13. Open questions
 
@@ -745,3 +762,9 @@ The library is done when:
 - An automation can report a situation directly, with a finite `ttl` that fresh reports renew (ADR 0036).
 - Clarifications with no change in behavior. Quiet hours delay `notify` and never lower loudness. The recipient `sites` tag is kept in the data model but has no effect. Examples use a generic recipient id.
 - Corrections with no change in behavior. Section 2 names the engine module `health_tree.engine`. There is no `health_tree.conventions` module: the conventions are names documented in section 5. Section 11 links to the current Homeostatic roadmap. The status line gives the current library version.
+
+## 22. Changes from 0.9
+
+- Independent attention routes and selected-route activation share episode controls while retaining separate delivery histories and clocks (ADR 0037). Explicit rearming lets a caller renew attention after a confirmed change (ADR 0038). These are in library 0.6.0.
+- Optional delivery grouping consolidates compatible deliveries while preserving episodes, routes and acknowledgment (ADR 0039). This is included in library 0.7.0.
+- Restore scenarios 79 to 82 to the numbered inventory and check fixture coverage against it. State the existing unit-test exceptions in the acceptance criteria. These corrections do not change library behavior.

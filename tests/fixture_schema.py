@@ -114,6 +114,7 @@ def validate_fixture(document: object, *, filename: str) -> None:
             "policy",
             "graph",
             "views",
+            "delivery_groups",
             "steps",
         },
         filename,
@@ -129,6 +130,8 @@ def validate_fixture(document: object, *, filename: str) -> None:
     if "policy" in data:
         _policy(data.get("policy"), filename, problems)
     nodes = _graph(data.get("graph"), filename, problems)
+    if "delivery_groups" in data:
+        _delivery_group_config(data["delivery_groups"], nodes, filename, problems)
     views = _views(data.get("views", {}), nodes, f"{filename}: views", problems)
     _steps(
         data.get("steps"),
@@ -152,6 +155,26 @@ def _require_keys(
     missing = required - data.keys()
     if missing:
         problems.append(f"{filename}: missing {', '.join(sorted(missing))}")
+
+
+def _delivery_group_config(
+    value: object, nodes: dict[str, set[str]], where: str, problems: list[str]
+) -> None:
+    if not isinstance(value, dict):
+        problems.append(f"{where}.delivery_groups must be a mapping")
+        return
+    _require_keys(value, {"subjects", "routes"}, where, problems)
+    _reject_unknown(value, {"subjects", "routes"}, where, problems)
+    for name in ("subjects", "routes"):
+        mapping = value.get(name)
+        if not isinstance(mapping, dict):
+            problems.append(f"{where}.delivery_groups.{name} must be a mapping")
+            continue
+        for key, group in mapping.items():
+            if name == "subjects" and key not in nodes:
+                problems.append(f"{where}.delivery_groups.subjects names unknown node")
+            if not isinstance(key, str) or not isinstance(group, str) or not group:
+                problems.append(f"{where}.delivery_groups needs string assignments")
 
 
 def _reject_unknown(
@@ -730,7 +753,7 @@ def _expect(
     path = f"{where}.expect"
     _reject_unknown(
         expect,
-        {"bind", "events", "deliveries", "open", "queries"},
+        {"bind", "events", "deliveries", "grouped", "open", "queries"},
         path,
         problems,
     )
@@ -748,6 +771,8 @@ def _expect(
         if not has_policy:
             problems.append(f"{path}.deliveries requires a policy")
         _deliveries(expect["deliveries"], bound, f"{path}.deliveries", problems)
+    if "grouped" in expect:
+        _grouped_deliveries(expect["grouped"], bound, f"{path}.grouped", problems)
     if "open" in expect:
         _open(expect["open"], nodes, bound, f"{path}.open", problems)
     if "queries" in expect:
@@ -911,6 +936,39 @@ def _deliveries(
         elif delivery.get("loudness") not in _LOUDNESS:
             problems.append(f"{path}.loudness is not a loudness")
         _ref(delivery.get("episode"), bound, f"{path}.episode", problems)
+
+
+def _grouped_deliveries(
+    value: object, bound: set[str], where: str, problems: list[str]
+) -> None:
+    if not isinstance(value, list):
+        problems.append(f"{where} must be a list")
+        return
+    for group in value:
+        if not isinstance(group, dict):
+            problems.append(f"{where} needs group mappings")
+            continue
+        _reject_unknown(
+            group, {"group", "to", "silent", "closed", "members"}, where, problems
+        )
+        problems.extend(
+            f"{where}.{key} must be true or false"
+            for key in ("silent", "closed")
+            if key in group and not isinstance(group[key], bool)
+        )
+        for key in ("group", "to"):
+            if key in group:
+                _string(group[key], f"{where}.{key}", problems)
+        members = group.get("members", [])
+        if not isinstance(members, list):
+            problems.append(f"{where}.members must be a list")
+            continue
+        for member in members:
+            if not isinstance(member, dict):
+                problems.append(f"{where}.members needs mappings")
+                continue
+            _reject_unknown(member, {"episode", "route"}, where, problems)
+            _ref(member.get("episode"), bound, where, problems)
 
 
 def _open(
