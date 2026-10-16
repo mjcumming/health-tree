@@ -4,11 +4,11 @@ Design of record for this library. A Home Assistant integration is the first con
 
 | | |
 | --- | --- |
-| Version | 0.10 |
-| Date | 2026-10-14 |
-| Status | Draft for review, with ADRs 0024 to 0039 accepted. The library implementation is at version 0.7.0, including delivery grouping. Real observation proofs remain outstanding. |
+| Version | 0.11 |
+| Date | 2026-10-16 |
+| Status | Draft for review, with ADRs 0024 to 0040 accepted. Release status is recorded in the changelog. Real observation proofs remain outstanding. |
 | Decisions | [docs/adr](adr/README.md) |
-| Changes from 0.9 | Section 22 |
+| Changes from 0.10 | Section 23 |
 
 ## Purpose
 
@@ -274,6 +274,10 @@ A registered check starts `unknown`, with its `unknown_hold` measured from regis
 16. Absorption. When a root's episode opens, an open episode on a node that depends on it resolves as `absorbed` if that node's onset is no more than `settle` before the root's onset. The node is then recorded on the root's episode.
 17. An episode whose onset is earlier than that stays open, and its node is not recorded on the root's episode. Two problems, two episodes. When the root recovers, that episode continues, and nothing opens twice.
 18. Coalescing. When `coalesce_count` or more episodes would open within `coalesce_window` on nodes that share a direct hard dependency, those nodes are coalesced onto one episode anchored on that dependency, with reason `dependents_failing`. The anchor's `own` does not change. Stragglers left after a rejoin coalesce the same way. See ADR 0021.
+    - `coalesce_count=None` disables sibling coalescing and joining. Failures under a healthy dependency remain separate, including simultaneous eligibility after startup. Observed failing dependencies still mute and absorb their dependents. See ADR 0040.
+    - With coalescing disabled, existing groups become separate root episodes, including on restore. A recovered root holds stragglers through normal rejoin grace, then releases separate roots. Unknown evidence without a current finding on a watched dependency or any unresolved member preserves membership until fresh evidence or the stale rules permit a complete transition; it never proves recovery. A temporary unknown watched-dependency state during reload cannot separate its members before recovery qualifies, even if rejoin grace has expired. A dependency without checks never delays this transition.
+    - Successor `EpisodeOpened` events name their predecessor in `split_from` and precede its resolution. A predecessor that no longer has its own problem resolves as `split`, naming successors in `split_into`; a still-failing or warning root retains its identity. A split is a change of tracking scope, not observed recovery. Only current successors inherit controls and attention history through policy handling. Later independent failures do not.
+    - Multiple recovering dependencies produce at most one successor per shared affected node. Existing independent episodes retain their identity and controls. A new shared successor receives fresh attention with `split_from=None`, avoiding arbitrary inheritance from one predecessor. Every ending predecessor includes that successor in `split_into`.
     - One anchor, one episode. If the anchor already has an open episode, the members are recorded on it and the reason is added. Otherwise a `group` episode opens.
     - Episodes from that set that are already open are absorbed into it.
     - A direct dependent of the anchor that fails while the episode holds coalesced members joins it, and the episode is updated.
@@ -606,6 +610,7 @@ Each is tagged with its area.
 82. **Explicit attention rearming.** Rearming an acknowledged episode requests renewed attention without resolving it. A repeated rearm without another acknowledgment sends nothing. Rearming during shelving respects the shelf through restart and requests attention when it ends.
 
 83. **Delivery grouping.** Two independent conditions share a subject and compatible immediate delivery instructions. The first opens one message and is acknowledged. A later failure of the second joins that message and requests new attention. Restart retains membership. Recovery of the first silently updates the message while the second remains actionable. A separately configured scheduled report remains independent. Only final recovery closes each delivered message. Grouping changes no episode identity, evidence or acknowledgment.
+84. **Independent siblings.** With `coalesce_count=None`, sibling failures under a passing dependency open separate episodes after startup and as later siblings fail. A failing dependency still owns one episode. After its recovery and rejoin grace, remaining failures split into separate episodes without an all-clear. Restored groups split the same way, retaining unresolved unknown members until evidence permits the transition. Split successors inherit only their predecessor's authorized route history, acknowledgment and pause; their controls then operate independently.
 
 ## 11. Home Assistant integration, later
 
@@ -768,3 +773,8 @@ Synthetic story and scenario coverage is checked by `tests/test_fixtures.py`; re
 - Independent attention routes and selected-route activation share episode controls while retaining separate delivery histories and clocks (ADR 0037). Explicit rearming lets a caller renew attention after a confirmed change (ADR 0038). These are in library 0.6.0.
 - Optional delivery grouping consolidates compatible deliveries while preserving episodes, routes and acknowledgment (ADR 0039). This is included in library 0.7.0.
 - Restore scenarios 79 to 82 to the numbered inventory and check fixture coverage against it. State the existing unit-test exceptions in the acceptance criteria. These corrections do not change library behavior.
+
+## 23. Changes from 0.10
+
+- Optional sibling coalescing keeps independent failures separate while preserving suppression by actual failing dependencies. Public split events transfer existing attention and controls to exact successors without claiming recovery (ADR 0040).
+- Scenario 84 covers startup, later failures and recovery with coalescing disabled. Additional engine and policy regressions cover restore with unknown evidence, control isolation, pending deadlines and route authorization.

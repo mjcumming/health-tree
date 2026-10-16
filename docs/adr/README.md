@@ -12,7 +12,7 @@ Acceptance records a decision. Implementation and release status belong in the [
 | [0004](0004-fixed-types-only-where-the-engine-computes.md) | Fixed types only where the engine computes | Accepted |
 | [0005](0005-status-is-observed-never-rewritten.md) | Status is observed, never rewritten | Accepted |
 | [0006](0006-one-cause-graph-separate-views-edge-records.md) | One cause graph, separate views, edges as records | Accepted |
-| [0007](0007-episode-lifecycle.md) | Episode lifecycle | Accepted |
+| [0007](0007-episode-lifecycle.md) | Episode lifecycle | Coalescing choice partially superseded by 0040 |
 | [0008](0008-settle-gate-and-probe-requests.md) | Settle gate and probe requests | Superseded by 0022 |
 | [0009](0009-importance-flows-up.md) | Importance flows up the cause graph | Accepted |
 | [0010](0010-attention-policy-in-the-library.md) | The attention policy is a pure library module; its content is configuration | Accepted |
@@ -26,7 +26,7 @@ Acceptance records a decision. Implementation and release status belong in the [
 | [0018](0018-durations-are-required.md) | Durations are required; the library has no timing defaults | Accepted |
 | [0019](0019-a-node-is-one-capability.md) | A node is one capability | Accepted |
 | [0020](0020-policy-matches-each-reason.md) | The policy matches each reason; the loudest wins | Single decision partially superseded by 0037 |
-| [0021](0021-coalesced-members-decide-recovery.md) | One anchor, one episode; coalesced members decide recovery | Accepted |
+| [0021](0021-coalesced-members-decide-recovery.md) | One anchor, one episode; coalesced members decide recovery | Coalescing choice partially superseded by 0040 |
 | [0022](0022-settle-gate-waits-only-on-doubt.md) | The settle gate waits only on dependencies in doubt | Accepted |
 | [0023](0023-readiness-reads-own-status.md) | Readiness reads observed status, and stale is not a failure | Superseded by 0025 |
 | [0024](0024-atomic-observation-batches-and-fixture-steps.md) | Atomic observation batches and fixture steps; supersedes 0012 | Accepted |
@@ -45,6 +45,7 @@ Acceptance records a decision. Implementation and release status belong in the [
 | [0037](0037-independent-attention-routes.md) | Independent attention routes share episode controls | Accepted |
 | [0038](0038-explicit-attention-rearming.md) | Caller-confirmed changes can explicitly rearm acknowledgment | Accepted |
 | [0039](0039-consolidate-compatible-deliveries.md) | Compatible deliveries share messages while episodes remain independent | Accepted |
+| [0040](0040-optional-sibling-coalescing.md) | Optional sibling coalescing preserves independent failures and controls | Accepted |
 
 ## Writing one
 

@@ -1,0 +1,93 @@
+id: scenario-84-independent-siblings
+title: Healthy dependencies leave sibling failures independent
+covers: [scenario-84]
+start: 2026-10-16T12:00:00Z
+settings:
+  settle: 0s
+  rejoin_grace: 10s
+  startup_grace: 10s
+  coalesce_count: null
+  coalesce_window: 60s
+graph:
+  - id: controller
+    checks:
+      - {id: state, raise_hold: 0s, clear_hold: 0s, ttl: null, unknown_hold: 15m}
+  - id: one
+    depends_on: [controller]
+    checks:
+      - {id: state, raise_hold: 0s, clear_hold: 0s, ttl: null, unknown_hold: 15m}
+  - id: two
+    depends_on: [controller]
+    checks:
+      - {id: state, raise_hold: 0s, clear_hold: 0s, ttl: null, unknown_hold: 15m}
+  - id: three
+    depends_on: [controller]
+    checks:
+      - {id: state, raise_hold: 0s, clear_hold: 0s, ttl: null, unknown_hold: 15m}
+  - id: four
+    depends_on: [controller]
+    checks:
+      - {id: state, raise_hold: 0s, clear_hold: 0s, ttl: null, unknown_hold: 15m}
+steps:
+  - at: 2026-10-16T12:00:00Z
+    ingest:
+      - {node: controller, check: state, status: pass, reason: ok}
+      - {node: one, check: state, status: fail, reason: unavailable}
+      - {node: two, check: state, status: fail, reason: unavailable}
+      - {node: three, check: state, status: fail, reason: unavailable}
+      - {node: four, check: state, status: pass, reason: ok}
+    expect: {events: []}
+  - at: 2026-10-16T12:00:10Z
+    expect:
+      bind:
+        one_ep: {opened: one}
+        two_ep: {opened: two}
+        three_ep: {opened: three}
+      events:
+        - {opened: {anchor: one, form: root}}
+        - {opened: {anchor: two, form: root}}
+        - {opened: {anchor: three, form: root}}
+  - at: 2026-10-16T12:00:20Z
+    ingest:
+      - {node: four, check: state, status: fail, reason: unavailable}
+    expect:
+      bind: {four_ep: {opened: four}}
+      events:
+        - {opened: {anchor: four, form: root}}
+  - at: 2026-10-16T12:00:30Z
+    ingest:
+      - {node: one, check: state, status: pass, reason: ok}
+      - {node: two, check: state, status: pass, reason: ok}
+      - {node: three, check: state, status: pass, reason: ok}
+      - {node: four, check: state, status: pass, reason: ok}
+    expect:
+      events:
+        - {resolved: {episode: $one_ep, resolution: cleared}}
+        - {resolved: {episode: $two_ep, resolution: cleared}}
+        - {resolved: {episode: $three_ep, resolution: cleared}}
+        - {resolved: {episode: $four_ep, resolution: cleared}}
+  - at: 2026-10-16T12:00:40Z
+    ingest:
+      - {node: controller, check: state, status: fail, reason: unavailable}
+      - {node: one, check: state, status: fail, reason: unavailable}
+      - {node: two, check: state, status: fail, reason: unavailable}
+      - {node: three, check: state, status: fail, reason: unavailable}
+      - {node: four, check: state, status: fail, reason: unavailable}
+    expect:
+      bind: {controller_ep: {opened: controller}}
+      events:
+        - {opened: {anchor: controller, form: root, recorded: [one, two, three, four]}}
+  - at: 2026-10-16T12:00:50Z
+    ingest:
+      - {node: controller, check: state, status: pass, reason: ok}
+    expect:
+      events:
+        - {updated: {episode: $controller_ep, recorded: [one, two, three, four]}}
+  - at: 2026-10-16T12:01:00Z
+    expect:
+      events:
+        - {opened: {anchor: one, form: root}}
+        - {opened: {anchor: two, form: root}}
+        - {opened: {anchor: three, form: root}}
+        - {opened: {anchor: four, form: root}}
+        - {resolved: {episode: $controller_ep, resolution: split}}

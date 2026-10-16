@@ -29,7 +29,7 @@ _CHECK_DURATIONS = ("raise_hold", "clear_hold", "ttl", "unknown_hold")
 _IMPORTANCE = frozenset({"low", "normal", "high", "critical"})
 _STATUS = frozenset({"pass", "unknown", "warn", "fail"})
 _LOUDNESS = frozenset({"record", "digest", "notify", "urgent"})
-_RESOLUTION = frozenset({"cleared", "removed", "absorbed"})
+_RESOLUTION = frozenset({"cleared", "removed", "absorbed", "split"})
 _QUIET_SCOPES = frozenset({"all", "node", "node_and_dependents"})
 _MATCH_KEYS = frozenset(
     {
@@ -238,8 +238,10 @@ def _settings(value: object, filename: str, problems: list[str]) -> None:
         if name in value:
             _duration(value[name], f"{where}.{name}", problems)
     count = value.get("coalesce_count")
-    if not isinstance(count, int) or isinstance(count, bool) or count < 2:
-        problems.append(f"{where}.coalesce_count must be an integer >= 2")
+    if count is not None and (
+        not isinstance(count, int) or isinstance(count, bool) or count < 2
+    ):
+        problems.append(f"{where}.coalesce_count must be null or an integer >= 2")
 
 
 def _policy(value: object, filename: str, problems: list[str]) -> None:

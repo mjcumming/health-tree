@@ -22,7 +22,7 @@ type JSONValue = (
 type EpisodeForm = Literal["root", "group"]
 """`root` for a failing anchor, `group` for coalesced members (rule 18)."""
 
-type Resolution = Literal["cleared", "removed", "absorbed"]
+type Resolution = Literal["cleared", "removed", "absorbed", "split"]
 """Why an episode resolved (rules 15, 16, 18 and 23)."""
 
 type QuietScope = Literal["all", "node", "node_and_dependents"]
@@ -91,12 +91,12 @@ def _require_non_negative(name: str, value: timedelta | None) -> None:
 
 @dataclass(frozen=True, slots=True, kw_only=True)
 class EngineSettings:
-    """Engine-wide durations. All are required (ADR 0018)."""
+    """Explicit engine timing; `coalesce_count=None` keeps siblings independent."""
 
     settle: timedelta
     rejoin_grace: timedelta
     startup_grace: timedelta
-    coalesce_count: int
+    coalesce_count: int | None
     coalesce_window: timedelta
 
     def __post_init__(self) -> None:
@@ -105,7 +105,7 @@ class EngineSettings:
         _require_non_negative("rejoin_grace", self.rejoin_grace)
         _require_non_negative("startup_grace", self.startup_grace)
         _require_non_negative("coalesce_window", self.coalesce_window)
-        if self.coalesce_count < 2:
+        if self.coalesce_count is not None and self.coalesce_count < 2:
             raise ValueError("coalesce_count must be at least 2")
 
 
@@ -249,9 +249,10 @@ class Episode:
 
 @dataclass(frozen=True, slots=True, kw_only=True)
 class EpisodeOpened:
-    """An episode opened. It carries the whole episode as it now stands."""
+    """An episode opened; `split_from` names its exact control predecessor."""
 
     episode: Episode
+    split_from: str | None = None
 
 
 @dataclass(frozen=True, slots=True, kw_only=True)
@@ -263,18 +264,25 @@ class EpisodeUpdated:
 
 @dataclass(frozen=True, slots=True, kw_only=True)
 class EpisodeResolved:
-    """An episode resolved. `absorbed_into` names the absorbing episode."""
+    """An episode ended; absorption and split links do not imply recovery."""
 
     episode: Episode
     resolution: Resolution
     absorbed_into: str | None = None
+    split_into: tuple[str, ...] = ()
 
     def __post_init__(self) -> None:
-        """Name the absorbing episode exactly when the resolution is absorbed."""
+        """Require transition links exactly for their corresponding resolutions."""
         if (self.resolution == "absorbed") != (self.absorbed_into is not None):
             raise ValueError(
                 "absorbed_into is required for an absorption, and only then"
             )
+        if (self.resolution == "split") != bool(self.split_into):
+            raise ValueError("split_into is required for a split, and only then")
+        if len(set(self.split_into)) != len(self.split_into) or (
+            self.episode.episode_id in self.split_into
+        ):
+            raise ValueError("split successors must be distinct from the predecessor")
 
 
 @dataclass(frozen=True, slots=True, kw_only=True)

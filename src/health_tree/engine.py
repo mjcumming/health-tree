@@ -103,6 +103,7 @@ class _EpisodeState:
     holding: set[str] = field(default_factory=set)
     holding_until: datetime | None = None
     view: Episode | None = None
+    split_from: str | None = None
 
 
 @dataclass(slots=True, kw_only=True)
@@ -110,6 +111,7 @@ class _Closing:
     state: _EpisodeState
     resolution: Resolution
     into: str | None = None
+    split_into: tuple[str, ...] = ()
 
 
 @dataclass(slots=True, kw_only=True)
@@ -663,6 +665,9 @@ class Engine:
         self._resolve_recovered(frame)
         probes = self._gate(frame)
         self._open(frame)
+        if self._settings.coalesce_count is None:
+            self._separate_members(frame)
+            self._resolve_recovered(frame)
         return self._emit(frame, probes)
 
     def _build_frame(self, now: datetime) -> _Frame:
@@ -723,10 +728,19 @@ class Engine:
             state.rejoin(now)
 
     def _close(
-        self, state: _EpisodeState, resolution: Resolution, into: str | None = None
+        self,
+        state: _EpisodeState,
+        resolution: Resolution,
+        into: str | None = None,
+        *,
+        split_into: tuple[str, ...] = (),
     ) -> None:
         del self._episodes[state.episode_id]
-        self._closing.append(_Closing(state=state, resolution=resolution, into=into))
+        self._closing.append(
+            _Closing(
+                state=state, resolution=resolution, into=into, split_into=split_into
+            )
+        )
 
     def _absorb(self, state: _EpisodeState, into: _EpisodeState) -> None:
         into.absorbed.append(state.episode_id)
@@ -734,6 +748,9 @@ class Engine:
 
     def _update_members(self, frame: _Frame) -> bool:
         """Dissolve undersized groups; report whether stale clocks restarted."""
+        count = self._settings.coalesce_count
+        if count is None:
+            return False
         rejoined = False
         for state in self._episodes.values():
             self._update_holding(state, frame)
@@ -744,7 +761,7 @@ class Engine:
                 if frame.own[member] is Status.PASS:
                     del state.members[member]
             failing = [m for m in state.members if frame.findings[m]]
-            if len(failing) >= self._settings.coalesce_count:
+            if len(failing) >= count:
                 continue
             for member in state.members:
                 self._rejoin(member, frame.now)
@@ -774,10 +791,86 @@ class Engine:
         still = sorted(state.holding, key=self._positions.__getitem__)
         state.holding.clear()
         state.holding_until = None
-        if len(still) >= self._settings.coalesce_count:
+        count = self._settings.coalesce_count
+        assert count is not None
+        if len(still) >= count:
             for name in still:
                 state.members[name] = frame.now
             state.members_since = frame.now
+
+    def _separate_members(self, frame: _Frame) -> None:
+        """Continue existing grouped scope independently without claiming recovery."""
+        created: set[str] = set()
+        for state in list(self._episodes.values()):
+            scope = state.members.keys() | state.holding
+            if not scope:
+                continue
+            unresolved = {name for name in scope if frame.own[name] is not Status.PASS}
+            state.members = {
+                name: since
+                for name, since in state.members.items()
+                if name in unresolved
+            }
+            state.holding &= unresolved
+            if not unresolved:
+                if state.form == "group":
+                    self._close(state, "cleared")
+                continue
+            if frame.own[state.anchor] is Status.FAIL:
+                continue
+            if (
+                frame.watched[state.anchor]
+                and frame.own[state.anchor] is Status.UNKNOWN
+                and not frame.findings[state.anchor]
+            ):
+                continue
+            if (
+                state.holding_until is not None and frame.now < state.holding_until
+            ) or any(
+                not frame.findings[name]
+                or (
+                    (grace := self._node_states[name].grace_until) is not None
+                    and frame.now < grace
+                )
+                for name in unresolved
+            ):
+                continue
+            roots = {
+                root
+                for name in unresolved
+                if frame.muted[name]
+                for root in frame.roots[name]
+            }
+            root_episodes = {
+                episode.anchor: episode.episode_id
+                for episode in self._episodes.values()
+                if episode.form == "root"
+            }
+            if not roots <= root_episodes.keys():
+                continue
+            successors = [root_episodes[root] for root in self._order if root in roots]
+            for name in self._order:
+                if name not in unresolved or frame.muted[name]:
+                    continue
+                existing = root_episodes.get(name)
+                if existing is not None:
+                    successor = self._episodes[existing]
+                    if existing in created:
+                        # Multiple prior issues cannot authorize one arbitrary
+                        # acknowledgment or pause for the shared successor.
+                        successor.split_from = None
+                else:
+                    successor = self._new_episode("root", name, frame.now)
+                    successor.opened_at = state.members.get(name, state.opened_at)
+                    successor.split_from = state.episode_id
+                    created.add(successor.episode_id)
+                successors.append(successor.episode_id)
+            state.members.clear()
+            state.members_since = None
+            state.holding.clear()
+            state.holding_until = None
+            if state.form == "group" or frame.own[state.anchor] is Status.PASS:
+                self._close(state, "split", split_into=tuple(dict.fromkeys(successors)))
 
     def _resolve_recovered(self, frame: _Frame) -> None:
         """Rule 15: a root episode clears when its anchor passes and holds no one.
@@ -790,7 +883,11 @@ class Engine:
                 state.form != "root"
                 or state.members
                 or state.holding
-                or frame.own[state.anchor] is not Status.PASS
+                or frame.own[state.anchor] is Status.FAIL
+                or (
+                    self._settings.coalesce_count is not None
+                    and frame.own[state.anchor] is not Status.PASS
+                )
             ):
                 continue
             recorded = state.view.recorded if state.view is not None else frozenset()
@@ -798,15 +895,25 @@ class Engine:
                 name: grace
                 for name in recorded
                 if name in self._nodes
-                and frame.findings[name]
+                and (
+                    frame.findings[name]
+                    or (
+                        self._settings.coalesce_count is None
+                        and frame.own[name] is not Status.PASS
+                    )
+                )
                 and not frame.muted[name]
+                and not any(
+                    episode.form == "root" and episode.anchor == name
+                    for episode in self._episodes.values()
+                )
                 and (grace := self._node_states[name].grace_until) is not None
-                and grace > frame.now
+                and (grace > frame.now or self._settings.coalesce_count is None)
             }
             if stragglers:
                 state.holding = set(stragglers)
                 state.holding_until = max(stragglers.values())
-            else:
+            elif frame.own[state.anchor] is Status.PASS:
                 self._close(state, "cleared")
 
     def _has_episode(self, node_id: str) -> bool:
@@ -887,6 +994,8 @@ class Engine:
 
     def _joinable(self, node_id: str, frame: _Frame) -> _EpisodeState | None:
         """ADR 0021: a failing sibling joins an episode that holds members."""
+        if self._settings.coalesce_count is None:
+            return None
         dependencies = self._dependencies(node_id)
         return next(
             (
@@ -901,6 +1010,9 @@ class Engine:
 
     def _coalesce(self, candidates: list[str], frame: _Frame) -> list[str]:
         """Rule 18: enough failures under one dependency become one episode."""
+        count = self._settings.coalesce_count
+        if count is None:
+            return candidates
         now = frame.now
         window_start = now - self._settings.coalesce_window
         for anchor in self._order:
@@ -917,7 +1029,7 @@ class Engine:
                 and frame.findings[state.anchor]
                 and not frame.muted[state.anchor]
             ]
-            if len(new) + len(recent) < self._settings.coalesce_count:
+            if len(new) + len(recent) < count:
                 continue
             target = next(
                 (s for s in self._episodes.values() if s.anchor == anchor),
@@ -940,7 +1052,7 @@ class Engine:
             for s in self._episodes.values()
             if s.form == "group" and s.anchor == node_id
         ]:
-            if not failed:
+            if not failed or self._settings.coalesce_count is None:
                 episode.members.update(group.members)
                 episode.members_since = group.members_since
             self._absorb(group, episode)
@@ -979,7 +1091,8 @@ class Engine:
             view = self._view(state, frame)
             if state.view is None:
                 state.view = view
-                opened.append(EpisodeOpened(episode=view))
+                opened.append(EpisodeOpened(episode=view, split_from=state.split_from))
+                state.split_from = None
             elif replace(state.view, updated_at=view.updated_at) != view:
                 state.view = replace(view, updated_at=frame.now)
                 updated.append(EpisodeUpdated(episode=state.view))
@@ -988,6 +1101,7 @@ class Engine:
                 episode=replace(closing.state.view, updated_at=frame.now),
                 resolution=closing.resolution,
                 absorbed_into=closing.into,
+                split_into=closing.split_into,
             )
             for closing in self._closing
             if closing.state.view is not None
@@ -1002,7 +1116,7 @@ class Engine:
         reasons = [*frame.findings[anchor]]
         for member in [*members, *held]:
             reasons.extend(frame.findings[member])
-        if members:
+        if members and any(frame.findings[member] for member in members):
             reasons.append(
                 Finding(
                     node_id=anchor,

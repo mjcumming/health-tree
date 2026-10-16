@@ -117,12 +117,16 @@ def test_valid_records_build() -> None:
     )
     assert node.importance is Importance.NORMAL
     assert _settings().coalesce_count == 3
+    assert _settings(coalesce_count=None).coalesce_count is None
     assert QuietWindow(scope="all", until=NOW).node_id is None
     assert QuietWindow(scope="node", node_id="device", until=NOW).scope == "node"
     resolved = EpisodeResolved(
         episode=_episode(), resolution="absorbed", absorbed_into="e2"
     )
     assert resolved.absorbed_into == "e2"
+    assert EpisodeResolved(
+        episode=_episode(), resolution="split", split_into=("e2", "e3")
+    ).split_into == ("e2", "e3")
     assert Readiness(answer="blocked", nodes=(), blocked_by="own").answer == "blocked"
     assert Readiness(answer="ready", nodes=()).blocked_by is None
     assert QuietHours(start=time(22, 30), end=time(7)).end == time(7)
@@ -217,6 +221,34 @@ def test_valid_records_build() -> None:
             ),
             "absorbed_into",
             id="clear-with-target",
+        ),
+        pytest.param(
+            lambda: EpisodeResolved(episode=_episode(), resolution="split"),
+            "split_into",
+            id="split-without-targets",
+        ),
+        pytest.param(
+            lambda: EpisodeResolved(
+                episode=_episode(), resolution="cleared", split_into=("e2",)
+            ),
+            "split_into",
+            id="clear-with-split-targets",
+        ),
+        pytest.param(
+            lambda: EpisodeResolved(
+                episode=_episode(), resolution="split", split_into=("e2", "e2")
+            ),
+            "successors",
+            id="duplicate-split-targets",
+        ),
+        pytest.param(
+            lambda: EpisodeResolved(
+                episode=_episode(),
+                resolution="split",
+                split_into=(_episode().episode_id,),
+            ),
+            "successors",
+            id="split-into-self",
         ),
         pytest.param(
             lambda: Readiness(answer="blocked", nodes=()),

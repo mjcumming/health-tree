@@ -1,6 +1,6 @@
 # ADR 0021: One anchor, one episode; coalesced members decide recovery
 
-**Status:** Accepted
+**Status:** Coalescing choice partially superseded by [0040](0040-optional-sibling-coalescing.md)
 **Date:** 2026-09-24
 **Deciders:** Michael Cumming
 

@@ -639,7 +639,9 @@ An ordinary restart uses `restore`, never `activate`.
 
 ## Save and restore across restarts
 
-`snapshot()` returns JSON-compatible data with a schema version, for the engine and the policy separately. Store both. After a restart, build a new engine with the same settings, register the graph, then restore its snapshot. Restore the policy's snapshot into a new `Policy` built from your current configuration; it matches its rules again.
+`snapshot()` returns JSON-compatible data with a schema version, for the engine and the policy separately. Store both. After a restart, build a new engine with the same settings and register the graph. Restore the policy's snapshot into a new `Policy` built from your current configuration, then restore the engine and pass its events to the policy in their returned order. The policy matches its rules again.
+
+Set `EngineSettings.coalesce_count=None` when sibling failures should remain independent while their shared dependency works. Actual dependency failures still suppress affected children. Existing groups split into independent episodes after restore; unknown members wait for fresh evidence or the configured stale threshold. Successor openings identify the old episode in `split_from`, allowing the policy to retain its acknowledgment, pause and authorized pending deliveries. A `split` resolution names those successors in `split_into`: update history and withdraw the old message without announcing recovery. Later unrelated episodes receive no inherited controls.
 
 Keep route ids stable to preserve their delivery histories. When applying changed reporting settings, build the new policy, restore the old policy's snapshot, then call `activate(now, CONTEXT)` and handle its deliveries. New routes retain the episode's acknowledgment and shelf but start without delivery history.
 
@@ -661,9 +663,9 @@ now += timedelta(minutes=10)
 state = json.loads(saved)
 engine = Engine(SETTINGS)
 engine.register_many(GRAPH, now)
-events = engine.restore(state["engine"], now)
 policy = Policy(POLICY)
 policy.restore(state["policy"], now)
+events = engine.restore(state["engine"], now)
 print(events)  # feed these to the policy, as after any engine call
 
 now += timedelta(minutes=1)

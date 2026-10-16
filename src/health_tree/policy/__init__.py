@@ -111,7 +111,9 @@ class _RoutePolicy:
         """Turn one engine event into the deliveries it causes now."""
         self._tick(now)
         match event:
-            case EpisodeOpened(episode=episode):
+            case EpisodeOpened(episode=episode, split_from=split_from):
+                if split_from is not None and split_from in self._tracked:
+                    return self._split(episode, self._tracked[split_from], now)
                 tracked = _Tracked(episode=episode, decision=self._decide(episode, now))
                 self._tracked[episode.episode_id] = tracked
                 return self._announce(tracked, now)
@@ -136,6 +138,64 @@ class _RoutePolicy:
                     for recipient in gone.sent_to
                 ]
         return []
+
+    def _split(
+        self, episode: Episode, predecessor: _Tracked, now: datetime
+    ) -> list[Delivery]:
+        """Carry only an explicit successor's authorized attention and controls."""
+        acknowledgment = predecessor.acknowledgment
+        attention_since = predecessor.attention_since or predecessor.episode.opened_at
+        decision = self._decide(
+            episode, now, attention_since, acknowledged=acknowledgment is not None
+        )
+        recipients = (
+            set(decision.recipients)
+            if decision.loudness is not Loudness.RECORD
+            else set()
+        )
+        tracked = _Tracked(
+            episode=episode,
+            decision=decision,
+            sent_to={name: None for name in predecessor.sent_to if name in recipients},
+            pending=[
+                replace(pending)
+                for pending in predecessor.pending
+                if pending.recipient in recipients
+                and decision.loudness in {Loudness.NOTIFY, Loudness.URGENT}
+                and decision.loudness is predecessor.decision.loudness
+            ],
+            digested=predecessor.digested
+            and decision.digest == predecessor.decision.digest,
+            last_sent=predecessor.last_sent,
+            attention_since=attention_since,
+            sent_at={
+                name: at
+                for name, at in predecessor.sent_at.items()
+                if name in recipients
+            },
+            acknowledgment=None
+            if acknowledgment is None
+            else replace(acknowledgment, episode_id=episode.episode_id),
+        )
+        self._tracked[episode.episode_id] = tracked
+        shelf = self._shelves.get(predecessor.episode.episode_id)
+        if shelf is not None:
+            self._shelves[episode.episode_id] = shelf
+        if _acknowledged(tracked):
+            tracked.pending.clear()
+        elif decision.loudness in {Loudness.NOTIFY, Loudness.URGENT}:
+            continuing = set(tracked.sent_to) | {p.recipient for p in tracked.pending}
+            due = (
+                now
+                if decision.loudness is Loudness.URGENT
+                else now + self._config.batch
+            )
+            tracked.pending.extend(
+                _Pending(recipient=recipient, due=due)
+                for recipient in decision.recipients
+                if recipient not in continuing
+            )
+        return [*self._replace(tracked), *self._release(tracked, now)]
 
     def advance(self, now: datetime, context: PolicyContext) -> list[Delivery]:
         """Deliver what is due: batches, digests, reminders, ends of quiet hours."""

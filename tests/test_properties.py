@@ -77,7 +77,9 @@ def scenarios(draw: st.DrawFn) -> Scenario:
         settle=timedelta(seconds=draw(st.sampled_from([0, 60, 120]))),
         rejoin_grace=timedelta(seconds=draw(st.sampled_from([0, 60]))),
         startup_grace=timedelta(seconds=draw(st.sampled_from([0, 90]))),
-        coalesce_count=draw(st.integers(min_value=2, max_value=4)),
+        coalesce_count=draw(
+            st.one_of(st.none(), st.integers(min_value=2, max_value=4))
+        ),
         coalesce_window=timedelta(seconds=60),
     )
     return Scenario(settings=settings, nodes=tuple(nodes), steps=tuple(steps))

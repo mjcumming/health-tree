@@ -4,6 +4,12 @@ All notable changes to this project are documented here. The format follows [Kee
 
 ## [Unreleased]
 
+## [0.8.0] - 2026-10-16
+
+### Added
+
+- Callers can disable sibling coalescing with `coalesce_count=None` while retaining suppression by observed failing dependencies. Existing groups and recovered-dependency stragglers split into independent episodes through public events, preserving acknowledgment, pauses and authorized attention history without reporting recovery.
+
 ## [0.7.0] - 2026-10-14
 
 ### Changed
