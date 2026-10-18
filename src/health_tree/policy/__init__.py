@@ -31,6 +31,7 @@ from health_tree._codec import (
 from health_tree.types import (
     Acknowledgment,
     Delivery,
+    DeliveryEligibility,
     Episode,
     EpisodeOpened,
     EpisodeResolved,
@@ -86,6 +87,7 @@ class _Tracked:
     attention_since: datetime | None = None
     sent_at: dict[str, datetime] = field(default_factory=dict)
     acknowledgment: Acknowledgment | None = None
+    predecessors: tuple[str, ...] = ()
 
 
 class _RoutePolicy:
@@ -114,6 +116,8 @@ class _RoutePolicy:
             case EpisodeOpened(episode=episode, split_from=split_from):
                 if split_from is not None and split_from in self._tracked:
                     return self._split(episode, self._tracked[split_from], now)
+                if any(identity in self._tracked for identity in episode.absorbed):
+                    return self._absorb(episode, now)
                 tracked = _Tracked(episode=episode, decision=self._decide(episode, now))
                 self._tracked[episode.episode_id] = tracked
                 return self._announce(tracked, now)
@@ -122,6 +126,9 @@ class _RoutePolicy:
                 if known is None:
                     return self.handle(EpisodeOpened(episode=episode), now, context)
                 known.episode = episode
+                predecessors = episode.absorbed - set(known.predecessors)
+                if any(identity in self._tracked for identity in predecessors):
+                    return self._absorb(episode, now, existing=known)
                 return self._redecide(known, now, changed=True)
             case EpisodeResolved(episode=episode, resolution=resolution):
                 gone = self._tracked.pop(episode.episode_id, None)
@@ -138,6 +145,72 @@ class _RoutePolicy:
                     for recipient in gone.sent_to
                 ]
         return []
+
+    def _absorb(
+        self, episode: Episode, now: datetime, *, existing: _Tracked | None = None
+    ) -> list[Delivery]:
+        """Transfer authorized history only within this independently matched route."""
+        decision = self._decide(episode, now)
+        tracked = existing or _Tracked(episode=episode, decision=decision)
+        tracked.episode = episode
+        tracked.decision = decision
+        tracked.predecessors = tuple(sorted(episode.absorbed))
+        recipients = set(decision.recipients)
+        for identity in episode.absorbed:
+            previous = self._tracked.get(identity)
+            if previous is None:
+                continue
+            previous_start = previous.attention_since or previous.episode.opened_at
+            tracked.attention_since = min(
+                tracked.attention_since or previous_start, previous_start
+            )
+            if previous.last_sent is not None:
+                tracked.last_sent = max(
+                    tracked.last_sent or previous.last_sent, previous.last_sent
+                )
+            for recipient in previous.sent_to:
+                if recipient in recipients:
+                    tracked.sent_to[recipient] = None
+                    if recipient in previous.sent_at:
+                        tracked.sent_at[recipient] = max(
+                            tracked.sent_at.get(recipient, previous.sent_at[recipient]),
+                            previous.sent_at[recipient],
+                        )
+            waiting = {item.recipient: item for item in tracked.pending}
+            for item in previous.pending:
+                if (
+                    item.recipient not in recipients
+                    or item.recipient in tracked.sent_to
+                ):
+                    continue
+                old = waiting.get(item.recipient)
+                if old is None:
+                    tracked.pending.append(replace(item))
+                elif item.due < old.due:
+                    old.due = item.due
+            tracked.digested = tracked.digested or (
+                previous.digested and previous.decision.digest == decision.digest
+            )
+        tracked.decision = decision = self._decide(
+            episode,
+            now,
+            tracked.attention_since,
+            acknowledged=tracked.acknowledgment is not None,
+        )
+        self._tracked[episode.episode_id] = tracked
+        if decision.loudness in {Loudness.NOTIFY, Loudness.URGENT}:
+            continuing = set(tracked.sent_to) | {p.recipient for p in tracked.pending}
+            tracked.pending.extend(
+                _Pending(
+                    recipient=recipient,
+                    due=now
+                    if decision.loudness is Loudness.URGENT
+                    else now + self._batch(decision),
+                )
+                for recipient in decision.recipients
+                if recipient not in continuing
+            )
+        return [*self._replace(tracked), *self._release(tracked, now)]
 
     def _split(
         self, episode: Episode, predecessor: _Tracked, now: datetime
@@ -176,6 +249,7 @@ class _RoutePolicy:
             acknowledgment=None
             if acknowledgment is None
             else replace(acknowledgment, episode_id=episode.episode_id),
+            predecessors=(predecessor.episode.episode_id,),
         )
         self._tracked[episode.episode_id] = tracked
         shelf = self._shelves.get(predecessor.episode.episode_id)
@@ -188,7 +262,7 @@ class _RoutePolicy:
             due = (
                 now
                 if decision.loudness is Loudness.URGENT
-                else now + self._config.batch
+                else now + self._batch(decision)
             )
             tracked.pending.extend(
                 _Pending(recipient=recipient, due=due)
@@ -217,6 +291,25 @@ class _RoutePolicy:
                     weekdays=self._config.digests[name].weekdays,
                 )
         return deliveries
+
+    def delivery_eligibility(
+        self, notification: Notification, now: datetime
+    ) -> DeliveryEligibility:
+        """Check continuing scope and controls without rereading accepted timing."""
+        tracked = self._tracked.get(notification.episode_id)
+        if tracked is None:
+            return DeliveryEligibility(eligible=False)
+        decision = tracked.decision
+        eligible = (
+            decision.loudness is not Loudness.RECORD
+            and notification.recipient in decision.recipients
+            and not _acknowledged(tracked)
+        )
+        shelf = self._shelves.get(notification.episode_id)
+        return DeliveryEligibility(
+            eligible=eligible,
+            resume_at=shelf if shelf is not None and shelf > now else None,
+        )
 
     def activate(self, now: datetime, context: PolicyContext) -> list[Delivery]:
         """Start attention afresh for tracked episodes, preserving their history."""
@@ -433,6 +526,9 @@ class _RoutePolicy:
                 ],
                 digested=bool(data["digested"]),
                 last_sent=time_from_json(data["last_sent"]),
+                predecessors=tuple(
+                    str(value) for value in as_list(data.get("predecessors", []))
+                ),
             )
 
     def _tick(self, now: datetime) -> None:
@@ -557,11 +653,16 @@ class _RoutePolicy:
                 return []
             return [self._send(tracked, r, now, cause) for r in decision.recipients]
         if decision.loudness is Loudness.NOTIFY:
-            due = now + self._config.batch
+            due = now + self._batch(decision)
             tracked.pending = [
                 _Pending(recipient=r, due=due, cause=cause) for r in decision.recipients
             ]
         return []
+
+    def _batch(self, decision: _Decision) -> timedelta:
+        if decision.rule is not None and decision.rule.batch is not None:
+            return decision.rule.batch
+        return self._config.batch
 
     def _redecide(
         self, tracked: _Tracked, now: datetime, *, changed: bool
@@ -599,6 +700,7 @@ class _RoutePolicy:
                 digest=digest,
                 silent=True,
                 cause="update",
+                replaces=tracked.predecessors,
             )
             for recipient in tracked.sent_to
         ]
@@ -740,6 +842,7 @@ class _RoutePolicy:
             channels=self._channels(recipient),
             loudness=tracked.decision.loudness,
             cause=cause,
+            replaces=tracked.predecessors,
         )
 
     def _thresholds(self, tracked: _Tracked) -> Iterable[datetime]:
@@ -835,6 +938,17 @@ class Policy:
             for route, policy in self._routes.items()
             for delivery in policy.advance(now, context)
         ]
+
+    def delivery_eligibility(
+        self, notification: Notification, now: datetime
+    ) -> DeliveryEligibility:
+        """Inspect continuing request authorization without exposing persistence."""
+        if now.utcoffset() != _ZERO:
+            raise ValueError("now must be a timezone-aware UTC datetime")
+        route = self._routes.get(notification.route)
+        if route is None:
+            return DeliveryEligibility(eligible=False)
+        return route.delivery_eligibility(notification, now)
 
     def activate(
         self,
@@ -1045,6 +1159,7 @@ def _tracked_to_json(tracked: _Tracked) -> JSONObject:
         "attention_since": time_to_json(tracked.attention_since),
         "sent_at": {name: time_to_json(at) for name, at in tracked.sent_at.items()},
         "acknowledgment": _acknowledgment_to_json(tracked.acknowledgment),
+        "predecessors": list(tracked.predecessors),
         "decision": {
             "loudness": tracked.decision.loudness.value,
             "recipients": list(tracked.decision.recipients),

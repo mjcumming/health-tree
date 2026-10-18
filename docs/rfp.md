@@ -4,11 +4,11 @@ Design of record for this library. A Home Assistant integration is the first con
 
 | | |
 | --- | --- |
-| Version | 0.11 |
-| Date | 2026-10-16 |
-| Status | Draft for review, with ADRs 0024 to 0040 accepted. Release status is recorded in the changelog. Real observation proofs remain outstanding. |
+| Version | 0.12 |
+| Date | 2026-10-18 |
+| Status | Draft for review, with ADRs 0024 to 0042 accepted. Release status is recorded in the changelog. Real observation proofs remain outstanding. |
 | Decisions | [docs/adr](adr/README.md) |
-| Changes from 0.10 | Section 23 |
+| Changes from 0.11 | Section 24 |
 
 ## Purpose
 
@@ -390,6 +390,22 @@ Each immutable `DeliveryGroup` exposes its group id, recipient, channels, a stab
 
 Acknowledgment targets the exact episode ids included in the presented message, through ordinary `Policy.acknowledge` calls. Later members remain unacknowledged. The reducer includes only deliveries the policy has authorized, preserving distinct routes, recipients, schedules and shelves. `deactivate(routes=None)` silently removes selected routes, or all routes when omitted. Moving a delivered member to a new group or channels updates both its old and new message. Snapshot and restore preserve membership and transport keys without sending; the caller persists this state together with its outbox and owns retry deduplication. See ADR 0039.
 
+### Collecting requests before delivery
+
+The optional `health_tree.delivery_collections.DeliveryCollections` accepts authorized `CollectionRequest` records after policy eligibility. Each supplies a resolved `Notification`, opaque group id representing saved identity and compatible instructions, required delay, accepted JSON instructions and content, and optional quiet hours with an IANA timezone. Each resolved channel and recipient partitions the collection. Instruction payloads must also match. A shared episode, device or cause is unnecessary.
+
+`apply(requests, resolutions, now, policy)` accepts a complete batch, and `advance(now, policy)` releases due collections. `flush=False` lets a caller capture multiple engine events before advancing once; arrivals at an expired deadline still start a separate window. Both methods accept `held=True` for an adapter startup hold, retaining accepted requests without starting collection until release. `next_deadline()` exposes the next timer; the adapter supplies UTC time. `pending()` returns the accepted request records. Returned `CollectedGroup` records expose the existing delivery group plus accepted instructions and exact member content. Snapshot and restore preserve fixed deadlines, membership and accepted data, including resolved destinations, without issuing a request.
+
+The first eligible request fixes the deadline; arrivals never extend it. A request accepted under a startup hold starts its first collection only after both startup and any current pause have ended; an already-started window keeps its deadline through a later pause. A new request at or after a closed window starts another with a distinct message identity and exact membership. Zero and scheduled reports add no wait. Requests ending or losing authorization leave pending collections. Saved quiet hours retain an overdue collection until the next permitted opening, without a second collection delay. Silent updates remain silent, reminders retain their policy eligibility, and partial recovery cannot clear other members. Acknowledgment applies to exactly the episodes presented. `deactivate(routes=None, preserve_pending=False)` cancels selected requests and withdraws messages; configuration reactivation may retain accepted pending requests with `preserve_pending=True`. A repeated request for the same episode, route and recipient retains its accepted destinations and instructions even if current configuration resolves differently.
+
+`Rule.batch` optionally overrides the configuration batch delay for that rule. Collection-enabled routes use zero to avoid a second batching wait while retaining ordinary quiet-hour eligibility.
+
+`Policy.delivery_eligibility(notification, now)` returns `DeliveryEligibility(eligible, resume_at)`. Eligibility retains current episode, route recipient and acknowledgment checks; shelves supply their expiry. Accepted timing and resolved targets are not reinterpreted from later configuration. Notification `replaces` explicitly names predecessor episodes during absorption or splitting. Applicable route history transfers without replaying a requested opening; pending collection members retain their deadline. Newly eligible routes remain independent. Recurrence receives a new episode and may open again. See ADR 0042.
+
+Each pending request captures its current pause expiry in `CollectionRequest.resume_at`. Transfer retains that accepted member's pause floor without shelving the shared successor episode or unrelated requests. Presented identity and instructions remain separate from a pending reminder's new window, so partial recovery and silent updates continue to address the message already shown.
+
+Absorption reduces opening history once per resulting episode, route, recipient and accepted destination. If that successor already has a pending request with incompatible accepted instructions, its own plan and window remain authoritative; the predecessor cannot replace its instructions, identity or deadline. Unrelated members of the predecessor's collection keep their accepted instructions. A compatible pending successor can inherit an earlier predecessor deadline. If either side has already presented the assignment, absorption removes a redundant pending opening and updates the message silently; a genuine pending reminder remains eligible. A different route or recipient retains independent authorization.
+
 ### Starting attention and inspecting policy
 
 `policy.activate(now, context)` restarts attention for the episodes already tracked,
@@ -581,7 +597,7 @@ Each is tagged with its area.
 51. **Queries.** A function with no checks depends only on nodes with no checks. `readiness` reports `unknown`, naming them as unwatched.
 52. **Engine.** A group episode is open on a controller. Another device under the controller fails. It joins the group, and the episode is updated. No episode opens for it.
 53. **Engine.** Three children of a passing controller fail in one `ingest_many` call, with `coalesce_count` 3. Only the group opens; there are no intermediate child episodes or absorbed child ids. Reversing the observation order has the same result, apart from opaque ids.
-54. **Engine and policy.** Three children fail ten seconds apart under a passing controller. The first two open their own episodes. The third arrival opens a group and absorbs the first two; their opening events remain in the history. With `notify` and `batch` 30 seconds, their pending deliveries are dropped and only the group is delivered after its own batch delay. An `urgent` variant delivers the first two openings immediately and then the group; absorption does not undo those deliveries.
+54. **Engine and policy.** Three children fail ten seconds apart under a passing controller. The first two open their own episodes. The third arrival opens a group and absorbs the first two; their opening events remain in the history. With `notify` and `batch` 30 seconds, the group inherits the earliest applicable pending deadline. An `urgent` variant delivers the first two openings immediately and then silently updates the group; absorption does not replay their opening attention.
 55. **Queries.** A function needs a passing service and an unwatched terminal controller. Readiness is `unknown`, naming the controller, including through an intermediate node with no checks and when the function's own check passes. A terminal node with only evidence checks (`affects_own: false`) is also unwatched. A node with no checks above a watched, passing dependency can still be `ready`.
 56. **Engine.** A command check is registered with `ttl: null` and `unknown_hold: 15m`, without an observation. Readiness is `unknown`. After the hold it opens a `stale` episode. Its first observed `pass` clears that episode only after `clear_hold`. A separate command check initialized with an observed `pass` does not become stale merely because no new command is issued.
 57. **Queries.** A passing root supports two branches that share a critical function. `impact` lists both branches and the function once, excludes the root and unrelated nodes, and reports critical importance. A leaf's impact is empty and retains its own importance. Queries do not change state or events.
@@ -611,6 +627,8 @@ Each is tagged with its area.
 
 83. **Delivery grouping.** Two independent conditions share a subject and compatible immediate delivery instructions. The first opens one message and is acknowledged. A later failure of the second joins that message and requests new attention. Restart retains membership. Recovery of the first silently updates the message while the second remains actionable. A separately configured scheduled report remains independent. Only final recovery closes each delivered message. Grouping changes no episode identity, evidence or acknowledgment.
 84. **Independent siblings.** With `coalesce_count=None`, sibling failures under a passing dependency open separate episodes after startup and as later siblings fail. A failing dependency still owns one episode. After its recovery and rejoin grace, remaining failures split into separate episodes without an all-clear. Restored groups split the same way, retaining unresolved unknown members until evidence permits the transition. Split successors inherit only their predecessor's authorized route history, acknowledgment and pause; their controls then operate independently.
+
+85. **Fixed-window collections.** Unrelated eligible requests sharing a saved identity and target collect without extending the first deadline. Restart preserves accepted targets and exact membership; late requests start new windows, empty windows send nothing, and scheduled reports bypass the wait. Absorption and splitting preserve authorized opening history.
 
 ## 11. Home Assistant integration, later
 
@@ -674,6 +692,8 @@ The library is done when:
 - The package has no runtime dependencies, passes mypy in strict mode, and reads no clock.
 
 Synthetic story and scenario coverage is checked by `tests/test_fixtures.py`; replay of real observation proofs remains pending. Optional delivery grouping is implemented in `src/health_tree/delivery_groups.py` and covered by `tests/fixtures/scenario-83-compatible-delivery-groups.yaml`. The [changelog](../CHANGELOG.md) owns release status, and the [Homeostatic roadmap](https://github.com/mjcumming/homeostatic/blob/main/docs/roadmap.md#current-work) owns downstream adoption and release prerequisites.
+
+Fixed-window collections and absorption history have synthetic executable coverage in scenario 85 and focused collection tests. Downstream Homeostatic integration, editor acceptance and installation are separate acceptance states, owned by its roadmap. No live notification or real observation proof is established by these tests.
 
 ## 13. Open questions
 
@@ -778,3 +798,8 @@ Synthetic story and scenario coverage is checked by `tests/test_fixtures.py`; re
 
 - Optional sibling coalescing keeps independent failures separate while preserving suppression by actual failing dependencies. Public split events transfer existing attention and controls to exact successors without claiming recovery (ADR 0040).
 - Scenario 84 covers startup, later failures and recovery with coalescing disabled. Additional engine and policy regressions cover restore with unknown evidence, control isolation, pending deadlines and route authorization.
+
+## 24. Changes from 0.11
+
+- Optional fixed-window collections retain accepted targets, instructions, exact membership and deadlines through restart. Independent windows use distinct message identities; quiet hours and startup holds precede release, and reports add no delay (ADR 0042).
+- Policy absorption transfers applicable route history without reopening attention. Explicit predecessor identities let delivery reduction retain pending deadlines and silent updates through absorption and splitting. A per-rule batch override prevents successive collection waits.

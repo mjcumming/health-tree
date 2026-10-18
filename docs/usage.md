@@ -502,6 +502,18 @@ Use `message.key` as the stable transport identity. Render only `message.members
 
 An acknowledgment action must carry the exact member episode ids presented to that recipient, then acknowledge those episodes individually. Do not look up the group's newest membership when a person taps an older message: it may now contain a new problem they have not seen. Save `groups.snapshot()` with the transport outbox, and restore it with `groups.restore(snapshot)`. Restore sends nothing. Apply a complete event batch before sending to avoid transient open/close messages; retry deduplication remains the adapter's responsibility.
 
+### Collect requests in a fixed window
+
+Use `health_tree.delivery_collections.DeliveryCollections` when unrelated issues select one saved notification. Pass `CollectionRequest` records containing the policy's notification, your opaque saved identity as `group_id`, an explicit `delay`, accepted JSON `instructions` and rendering `content`. Resolve each notification's channels to destinations before acceptance. Compatible instructions, recipient and each resolved destination partition the collection; names and shared causes do not determine membership.
+
+Call `collections.apply(requests, resolution_notices, now, policy)`, then render each returned `CollectedGroup.group` using its exact `contents` and accepted `instructions`. Its group has the same membership and silent-update interface as `DeliveryGroups`. Each new fixed window receives its own stable message key. Store the exact episode ids presented with each acknowledgment action.
+
+Include `collections.next_deadline()` in your timer calculation and call `collections.advance(now, policy)` when it fires. Use `flush=False` while accepting several events from one captured observation cycle, then advance once at the end. A request arriving at an expired deadline starts a new window even if the timer has not yet run. For an adapter startup hold, pass `held=True`; accepted requests start their collection when the hold is released. Collection-enabled policy rules can set `batch=timedelta(0)` to avoid an earlier ordinary batching wait.
+
+For delivery hours, pass the corresponding `QuietHours` and IANA `timezone` on each accepted request. The policy first determines eligibility; the collection also respects those accepted hours if its deadline crosses closing time. Digests bypass the collection delay. Persist `collections.snapshot()` with the transport outbox and restore with `collections.restore(snapshot)`. Pending deadlines and targets survive without re-resolving presence. Configuration reactivation can withdraw presented messages with `deactivate(routes=changed_routes, preserve_pending=True)` while keeping accepted requests; global deactivation uses the default `preserve_pending=False`.
+
+Pass policy notifications' `replaces` field through unchanged. The collection uses it to preserve accepted destinations, pause expiry and opening history when causes merge or split. An existing successor's pending plan remains intact if a predecessor carries incompatible instructions. Already presented assignments update silently, while independent assignments can still request attention.
+
 ## Acknowledge an episode
 
 Call `policy.acknowledge` when a person says they've seen an episode. On a rule with `require_acknowledgment=True`, that stops the reminders; [Acknowledgment](concepts.md#acknowledgment) lists everything else it stops and leaves alone. This rule set repeats urgent alerts until someone acknowledges them:

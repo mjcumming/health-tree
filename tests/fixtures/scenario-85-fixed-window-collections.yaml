@@ -1,0 +1,74 @@
+id: scenario-85-fixed-window-collections
+title: Unrelated requests collect by saved identity with fixed restart-safe deadlines
+covers: [scenario-85]
+start: '2026-10-18T07:00:00Z'
+settings:
+  settle: 0s
+  rejoin_grace: 0s
+  startup_grace: 0s
+  coalesce_count: 3
+  coalesce_window: 60s
+graph:
+  - id: one
+    checks:
+      - {id: state, raise_hold: 0s, clear_hold: 0s, ttl: null, unknown_hold: 15m}
+  - id: two
+    checks:
+      - {id: state, raise_hold: 0s, clear_hold: 0s, ttl: null, unknown_hold: 15m}
+  - id: late
+    checks:
+      - {id: state, raise_hold: 0s, clear_hold: 0s, ttl: null, unknown_hold: 15m}
+policy:
+  batch: 30s
+  recipients:
+    owner: {channels: [phone]}
+  digests: {}
+  rules:
+    - route: immediate
+      match: {}
+      loudness: notify
+      batch: 0s
+      to: owner
+delivery_groups:
+  subjects: {one: saved, two: saved, late: saved}
+  routes: {immediate: immediate}
+  delays: {immediate: 60s}
+steps:
+  - at: '2026-10-18T07:00:00Z'
+    ingest:
+      - {node: one, check: state, status: fail, reason: unavailable}
+    expect:
+      bind: {first: {opened: one}}
+      events: [{opened: {anchor: one, episode: $first}}]
+      grouped: []
+  - at: '2026-10-18T07:00:30Z'
+    ingest:
+      - {node: two, check: state, status: fail, reason: unavailable}
+    expect:
+      bind: {second: {opened: two}}
+      events: [{opened: {anchor: two, episode: $second}}]
+      grouped: []
+  - at: '2026-10-18T07:00:40Z'
+    restart: true
+    expect: {events: [], grouped: []}
+  - at: '2026-10-18T07:01:00Z'
+    expect:
+      events: []
+      grouped:
+        - group: saved:immediate
+          silent: false
+          members: [{episode: $first, route: immediate}, {episode: $second, route: immediate}]
+  - at: '2026-10-18T07:01:01Z'
+    ingest:
+      - {node: late, check: state, status: fail, reason: unavailable}
+    expect:
+      bind: {third: {opened: late}}
+      events: [{opened: {anchor: late, episode: $third}}]
+      grouped: []
+  - at: '2026-10-18T07:02:01Z'
+    expect:
+      events: []
+      grouped:
+        - group: saved:immediate
+          silent: false
+          members: [{episode: $third, route: immediate}]

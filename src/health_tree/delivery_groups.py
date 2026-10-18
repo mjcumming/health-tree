@@ -183,6 +183,7 @@ def _notification_json(member: Notification) -> JSONObject:
         "cause": member.cause,
         "previously_reported": member.previously_reported,
         "route": member.route,
+        "replaces": list(member.replaces),
     }
 
 
@@ -197,6 +198,7 @@ def _notification_from_json(data: JSONObject) -> Notification:
         cause=_string(data["cause"]),
         previously_reported=_boolean(data["previously_reported"]),
         route=_string(data["route"]),
+        replaces=tuple(_string(value) for value in as_list(data.get("replaces", []))),
     )
 
 

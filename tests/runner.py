@@ -34,6 +34,7 @@ from typing import Any, Protocol, cast
 
 import yaml
 
+from health_tree.delivery_collections import CollectionRequest, DeliveryCollections
 from health_tree.delivery_groups import DeliveryGroup, DeliveryGroups
 from health_tree.engine import Engine
 from health_tree.policy import Policy
@@ -434,6 +435,7 @@ def _rule(data: Mapping[str, Any]) -> Rule:
         digest=data.get("digest"),
         require_acknowledgment=data.get("require_acknowledgment", False),
         route=data.get("route", ""),
+        batch=parse_duration(data["batch"]) if "batch" in data else None,
         remind_every=(
             parse_duration(data["remind_every"]) if "remind_every" in data else None
         ),
@@ -490,6 +492,9 @@ class _Run:
     open: dict[str, Episode] = field(init=False, default_factory=dict)
     graph: dict[str, Node] = field(init=False, default_factory=dict)
     delivery_groups: DeliveryGroups = field(init=False, default_factory=DeliveryGroups)
+    delivery_collections: DeliveryCollections = field(
+        init=False, default_factory=DeliveryCollections
+    )
 
     def __post_init__(self) -> None:
         self.graph = {node.node_id: node for node in self.fixture.nodes}
@@ -582,7 +587,7 @@ class _Run:
         problems = self._bind(step.expect, events)
         problems += self._track(events)
         problems += self._check(step.expect, events, deliveries)
-        grouped = self._group_deliveries(deliveries, events)
+        grouped = self._group_deliveries(deliveries, events, step.at)
         if "grouped" in step.expect:
             problems += self._sequence(
                 "grouped", step.expect["grouped"], grouped, self._group_problems
@@ -608,7 +613,7 @@ class _Run:
         return events
 
     def _group_deliveries(
-        self, deliveries: list[Delivery], events: list[Event]
+        self, deliveries: list[Delivery], events: list[Event], now: datetime
     ) -> list[DeliveryGroup]:
         config = self.fixture.delivery_groups
         if not config:
@@ -629,6 +634,25 @@ class _Run:
             for item in deliveries
             if isinstance(item, Notification)
         }
+        if "delays" in config:
+            assert self.policy is not None
+            return [
+                item.group
+                for item in self.delivery_collections.apply(
+                    [
+                        CollectionRequest(
+                            notification=item,
+                            group_id=assignments[(item.episode_id, item.route)],
+                            delay=parse_duration(config["delays"][item.route]),
+                        )
+                        for item in deliveries
+                        if isinstance(item, Notification)
+                    ],
+                    [item for item in deliveries if isinstance(item, ResolutionNotice)],
+                    now,
+                    cast(Policy, self.policy),
+                )
+            ]
         return self.delivery_groups.apply(deliveries, assignments)
 
     def _group_problems(
@@ -636,7 +660,9 @@ class _Run:
     ) -> list[str]:
         expected = {key: value for key, value in pattern.items() if key != "members"}
         actual = {
-            "group": group.group_id,
+            "group": group.group_id.rsplit(":", 2)[0]
+            if "delays" in self.fixture.delivery_groups
+            else group.group_id,
             "to": group.recipient,
             "silent": group.silent,
             "closed": group.closed,
@@ -671,6 +697,11 @@ class _Run:
         group_state = _through_json(self.delivery_groups.snapshot(), "delivery groups")
         self.delivery_groups = DeliveryGroups()
         self.delivery_groups.restore(group_state)
+        collection_state = _through_json(
+            self.delivery_collections.snapshot(), "delivery collections"
+        )
+        self.delivery_collections = DeliveryCollections()
+        self.delivery_collections.restore(collection_state)
         config = self.fixture.policy
         if self.policy is not None and config is not None:
             policy_state = _through_json(self.policy.snapshot(), "policy")

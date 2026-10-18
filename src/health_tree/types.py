@@ -519,6 +519,7 @@ class Rule:
     escalate_after: timedelta | None = None
     require_acknowledgment: bool = False
     route: str = ""
+    batch: timedelta | None = None
 
     def __post_init__(self) -> None:
         """Give a digest rule its digest and a sending rule its recipients."""
@@ -529,6 +530,7 @@ class Rule:
         if self.remind_every is not None and self.remind_every <= _ZERO:
             raise ValueError("remind_every must be positive")
         _require_non_negative("escalate_after", self.escalate_after)
+        _require_non_negative("batch", self.batch)
 
 
 @dataclass(frozen=True, slots=True, kw_only=True)
@@ -600,6 +602,7 @@ class Notification:
     cause: str = "open"
     previously_reported: bool = False
     route: str = ""
+    replaces: tuple[str, ...] = ()
 
     def __post_init__(self) -> None:
         """Name the digest exactly for digest deliveries. Never deliver `record`."""
@@ -622,3 +625,11 @@ class ResolutionNotice:
 
 type Delivery = Notification | ResolutionNotice
 """What the policy returns. The adapter carries it out."""
+
+
+@dataclass(frozen=True, slots=True, kw_only=True)
+class DeliveryEligibility:
+    """Current authorization of an accepted request and any temporary shelf."""
+
+    eligible: bool
+    resume_at: datetime | None = None

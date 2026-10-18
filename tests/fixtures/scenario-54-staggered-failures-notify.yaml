@@ -94,9 +94,9 @@ steps:
   - at: 2026-09-24T12:01:40Z
     expect:
       events: []
-      deliveries: []
+      deliveries:
+        - {loudness: notify, episode: $group_ep, to: resident}
   - at: 2026-09-24T12:01:50Z
     expect:
       events: []
-      deliveries:
-        - {loudness: notify, episode: $group_ep, to: resident}
+      deliveries: []

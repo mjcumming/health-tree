@@ -164,7 +164,14 @@ def _delivery_group_config(
         problems.append(f"{where}.delivery_groups must be a mapping")
         return
     _require_keys(value, {"subjects", "routes"}, where, problems)
-    _reject_unknown(value, {"subjects", "routes"}, where, problems)
+    _reject_unknown(value, {"subjects", "routes", "delays"}, where, problems)
+    if "delays" in value:
+        delays = value["delays"]
+        if not isinstance(delays, dict):
+            problems.append(f"{where}.delivery_groups.delays must be a mapping")
+        else:
+            for route, duration in delays.items():
+                _duration(duration, f"{where}.delivery_groups.delays.{route}", problems)
     for name in ("subjects", "routes"):
         mapping = value.get(name)
         if not isinstance(mapping, dict):
@@ -345,6 +352,7 @@ def _rule(
             "escalate_after",
             "require_acknowledgment",
             "route",
+            "batch",
         },
         where,
         problems,
@@ -365,7 +373,7 @@ def _rule(
         problems.append(f"{where}.loudness is not a loudness")
     if "digest" in value and value["digest"] not in digests:
         problems.append(f"{where}.digest is not a digest")
-    for name in ("remind_every", "escalate_after"):
+    for name in ("remind_every", "escalate_after", "batch"):
         if name in value:
             _duration(value[name], f"{where}.{name}", problems)
 

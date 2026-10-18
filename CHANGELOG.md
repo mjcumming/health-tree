@@ -4,6 +4,17 @@ All notable changes to this project are documented here. The format follows [Kee
 
 ## [Unreleased]
 
+## [0.10.0] - 2026-10-18
+
+### Added
+
+- Optional fixed-window delivery collections combine unrelated authorized requests using an opaque saved identity, recipient and resolved destination. Accepted instructions, exact membership, deadlines and independent message identities survive restart; scheduled reports add no delay, and quiet hours and startup holds remain effective.
+- A public request-eligibility query and per-rule batch override support collection adapters without snapshot queries or additional adapter attention timers.
+
+### Changed
+
+- Absorption retains applicable route history and the earliest pending deadline. Explicit predecessor identities preserve delivery membership through absorption and splitting without replaying an opening; newly eligible routes remain independent.
+
 ## [0.9.0] - 2026-10-18
 
 ### Changed

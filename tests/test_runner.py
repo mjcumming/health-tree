@@ -502,7 +502,9 @@ def _scenario_54_urgent() -> Script:
         on_event={
             ("EpisodeOpened", "c1"): [_notify("c1", Loudness.URGENT)],
             ("EpisodeOpened", "c2"): [_notify("c2", Loudness.URGENT)],
-            ("EpisodeOpened", "g"): [_notify("g", Loudness.URGENT)],
+            ("EpisodeOpened", "g"): [
+                replace(_notify("g", Loudness.URGENT), silent=True)
+            ],
             ("EpisodeResolved", "c1"): [_withdraw("c1", "absorbed")],
             ("EpisodeResolved", "c2"): [_withdraw("c2", "absorbed")],
         },

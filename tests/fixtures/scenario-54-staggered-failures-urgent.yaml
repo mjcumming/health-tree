@@ -91,7 +91,7 @@ steps:
         - {resolved: {episode: $first_child, resolution: absorbed}}
         - {resolved: {episode: $second_child, resolution: absorbed}}
       deliveries:
-        - {loudness: urgent, episode: $group_ep, to: resident}
+        - {loudness: urgent, episode: $group_ep, to: resident, silent: true}
         - {episode: $first_child, to: resident, resolution: absorbed}
         - {episode: $second_child, to: resident, resolution: absorbed}
       open:

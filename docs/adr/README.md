@@ -47,6 +47,7 @@ Acceptance records a decision. Implementation and release status belong in the [
 | [0039](0039-consolidate-compatible-deliveries.md) | Compatible deliveries share messages while episodes remain independent | Accepted |
 | [0040](0040-optional-sibling-coalescing.md) | Optional sibling coalescing preserves independent failures and controls | Accepted |
 | [0041](0041-snapshots-hold-durable-state-only.md) | Snapshots hold durable state only; equal conditions give equal snapshots | Accepted |
+| [0042](0042-fixed-window-delivery-collections.md) | Fixed-window collections preserve accepted requests and causal attention history | Accepted |
 
 ## Writing one
 
