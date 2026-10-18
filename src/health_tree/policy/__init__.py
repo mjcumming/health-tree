@@ -48,7 +48,7 @@ from health_tree.types import (
     Rule,
 )
 
-SCHEMA_VERSION = 3
+SCHEMA_VERSION = 5
 """The version of each route's snapshot and the legacy default-route snapshot."""
 
 _ZERO = timedelta(0)
@@ -355,10 +355,12 @@ class _RoutePolicy:
         return min((t for t in times if t > now), default=None)
 
     def snapshot(self) -> dict[str, JSONValue]:
-        """All state, as JSON-compatible data with a schema version."""
+        """Durable state as JSON-compatible data with a schema version.
+
+        The clock is not part of it, so unchanged attention yields equal snapshots.
+        """
         return {
             "schema_version": SCHEMA_VERSION,
-            "now": time_to_json(self._last),
             "next_digest": {
                 name: time_to_json(at) for name, at in self._next_digest.items()
             },
@@ -373,7 +375,7 @@ class _RoutePolicy:
 
     def restore(self, state: Mapping[str, JSONValue], now: datetime) -> None:
         """Restore a snapshot taken by `snapshot`. Decisions are made afresh."""
-        if state.get("schema_version") not in {1, 2, SCHEMA_VERSION}:
+        if state.get("schema_version") not in {1, 2, 3, SCHEMA_VERSION}:
             raise ValueError(f"cannot restore schema {state.get('schema_version')!r}")
         self._tick(now)
         for name, at in as_object(state["next_digest"]).items():
@@ -406,9 +408,11 @@ class _RoutePolicy:
                     ).items()
                     if name in self._config.recipients
                 },
-                decision=self._decide(
+                decision=self._restored_decision(
+                    data,
+                    state,
                     episode,
-                    required_time(state["now"]),
+                    now,
                     attention_since,
                     acknowledged=acknowledgment is not None,
                 ),
@@ -445,6 +449,40 @@ class _RoutePolicy:
 
     def _channels(self, recipient: str) -> tuple[str, ...]:
         return self._config.recipients[recipient].channels
+
+    def _restored_decision(
+        self,
+        data: JSONObject,
+        state: Mapping[str, JSONValue],
+        episode: Episode,
+        now: datetime,
+        attention_since: datetime | None,
+        *,
+        acknowledged: bool,
+    ) -> _Decision:
+        """Rebuild the decision in force before the snapshot (ADR 0041).
+
+        Version 5 snapshots persist the decision, so the first advance after a
+        restore still emits a crossing that happened while stopped, once. Older
+        snapshots decide as of their stored clock.
+        """
+        stored = data.get("decision")
+        if stored is None:
+            at = required_time(state["now"]) if "now" in state else now
+            return self._decide(episode, at, attention_since, acknowledged=acknowledged)
+        record = as_object(stored)
+        fresh = self._decide(episode, now, attention_since, acknowledged=acknowledged)
+        digest = record.get("digest")
+        return _Decision(
+            loudness=Loudness(str(record["loudness"])),
+            rule=fresh.rule,
+            recipients=tuple(
+                str(name)
+                for name in as_list(record["recipients"])
+                if str(name) in self._config.recipients
+            ),
+            digest=None if digest is None else str(digest),
+        )
 
     def _decide(
         self,
@@ -928,7 +966,7 @@ class Policy:
 
     def restore(self, state: Mapping[str, JSONValue], now: datetime) -> None:
         """Restore route history by identity and shared episode controls."""
-        if state.get("schema_version") not in {1, 2, 3, 4}:
+        if state.get("schema_version") not in {1, 2, 3, 4, SCHEMA_VERSION}:
             raise ValueError(f"cannot restore schema {state.get('schema_version')!r}")
         if state.get("schema_version") == 4:
             states = as_object(state["routes"])
@@ -957,6 +995,7 @@ def _new_route_state(state: JSONObject) -> JSONObject:
                 "digested": False,
                 "last_sent": None,
                 "attention_since": None,
+                "decision": None,
             }
             for item in as_list(state["tracked"])
         ],
@@ -1006,6 +1045,11 @@ def _tracked_to_json(tracked: _Tracked) -> JSONObject:
         "attention_since": time_to_json(tracked.attention_since),
         "sent_at": {name: time_to_json(at) for name, at in tracked.sent_at.items()},
         "acknowledgment": _acknowledgment_to_json(tracked.acknowledgment),
+        "decision": {
+            "loudness": tracked.decision.loudness.value,
+            "recipients": list(tracked.decision.recipients),
+            "digest": tracked.decision.digest,
+        },
     }
 
 

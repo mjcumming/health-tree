@@ -46,6 +46,7 @@ Acceptance records a decision. Implementation and release status belong in the [
 | [0038](0038-explicit-attention-rearming.md) | Caller-confirmed changes can explicitly rearm acknowledgment | Accepted |
 | [0039](0039-consolidate-compatible-deliveries.md) | Compatible deliveries share messages while episodes remain independent | Accepted |
 | [0040](0040-optional-sibling-coalescing.md) | Optional sibling coalescing preserves independent failures and controls | Accepted |
+| [0041](0041-snapshots-hold-durable-state-only.md) | Snapshots hold durable state only; equal conditions give equal snapshots | Accepted |
 
 ## Writing one
 

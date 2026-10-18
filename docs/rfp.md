@@ -300,7 +300,7 @@ A quiet window and quiet hours are different clocks.
 ### Graph and state
 
 23. An edge that would close a cycle is rejected. Nodes, edges, and checks can be added, removed, or changed at runtime. A removed node's open episode resolves as `removed`. Dependents it muted wait out `rejoin_grace`.
-24. `snapshot()` returns all state as JSON-compatible data with a schema version. `restore()` runs after the graph is registered. Episodes whose anchor no longer exists resolve as `removed`. Other episodes keep their ids. A restored episode whose anchor still fails continues without a new `opened` event.
+24. `snapshot()` returns durable state as JSON-compatible data with a schema version: everything a restart would otherwise lose, and nothing a consumer re-derives on its next observation round. The engine clock and each check's last observation payload are not part of it, only its durable details: whether the check was observed, the reason, message and due time a pending transition will apply, and the expiry of evidence with a TTL. Two snapshots taken while no condition changed are equal, so a consumer can skip persisting an unchanged one; a check with a TTL moves its expiry with each observation. `restore()` runs after the graph is registered. Episodes whose anchor no longer exists resolve as `removed`. Other episodes keep their ids. A restored episode whose anchor still fails continues without a new `opened` event.
 25. The engine emits events and answers queries. It never sends, stores, sleeps, or reads a clock. Its only input beyond its calls is the random part of episode ids, and `Engine` accepts an id factory so tests can remove even that.
 
 ## 7. Attention policy
@@ -422,7 +422,7 @@ Acknowledgment applies across recipients and channels. An acknowledged episode r
 
 `Policy.unshelve(episode_id, now, context)` removes a shelf and processes due attention under current rules and quiet hours. A known unshelved episode is a no-op. Removing a shelf does not bypass the original batch delay. `Engine.cancel_quiet(window, now)` removes the first window matching scope, node, and original expiry, then reevaluates; other overlapping windows remain. No matching window is a no-op apart from normal time advancement. These actions never synthesize passing observations. The adapter uses its retained control ids to select one request and reject repeated cancellation.
 
-Policy snapshot version 3 adds acknowledgment and the original due time of shelf-held deliveries. Versions 1 and 2 restore without acknowledgment. The engine's snapshot format is unchanged.
+Policy snapshot version 3 adds acknowledgment and the original due time of shelf-held deliveries. Versions 1 and 2 restore without acknowledgment. Policy route snapshot version 5 persists each tracked episode's decision and drops the clock; versions 1 to 3 restore and decide as of their stored clock. Engine snapshot version 2 drops the clock and each check's last observation payload and keeps whether the check was observed; version 1 restores, its observation payloads read only as that fact (ADR 0041).
 
 ### Scheduled reports
 

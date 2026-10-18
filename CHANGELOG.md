@@ -4,6 +4,12 @@ All notable changes to this project are documented here. The format follows [Kee
 
 ## [Unreleased]
 
+## [0.9.0] - 2026-10-18
+
+### Changed
+
+- Snapshots hold durable state only. The engine snapshot (schema 2) drops the clock and each check's last observation payload and keeps whether the check was observed; schema 1 snapshots still restore. Policy route snapshots (schema 5) persist each tracked episode's decision instead of the clock; versions 1 to 3 still restore. Two snapshots taken while no condition changed are now equal, so a consumer can skip persisting an unchanged one (ADR 0041).
+
 ## [0.8.0] - 2026-10-16
 
 ### Added

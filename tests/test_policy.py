@@ -326,7 +326,7 @@ def test_snapshot_restores_through_json() -> None:
     state = json.loads(json.dumps(old.snapshot()))
     new = _policy(*rules)
     new.restore(state, at(10))
-    assert new.snapshot() == old.snapshot() | {"now": new.snapshot()["now"]}
+    assert new.snapshot() == old.snapshot()
     assert _kinds(new.advance(at(30), CONTEXT)) == [("notify", "")]
     resolved = EpisodeResolved(episode=_episode("paged"), resolution="cleared")
     assert _kinds(new.handle(resolved, at(40), CONTEXT)) == [("resolution", "cleared")]
@@ -502,3 +502,14 @@ def test_recipient_quiet_hours_do_not_block_other_reminders() -> None:
         "quiet",
         "awake",
     ]
+
+
+def test_policy_snapshot_is_equal_while_attention_is_unchanged() -> None:
+    """Advancing time without new attention changes no durable policy state."""
+    policy = _policy(Rule(match=Match(), loudness=Loudness.NOTIFY, to=("resident",)))
+    policy.handle(EpisodeOpened(episode=_episode("waiting")), T0, CONTEXT)
+    policy.advance(at(30), CONTEXT)
+    first = policy.snapshot()
+    policy.advance(at(60), CONTEXT)
+    assert policy.snapshot() == first
+    assert "now" not in first

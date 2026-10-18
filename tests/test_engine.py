@@ -3,10 +3,12 @@
 from collections.abc import Callable
 from datetime import timedelta
 import json
+from typing import Any, cast
 from zoneinfo import ZoneInfo
 
 import pytest
 
+from health_tree._codec import observation_to_json
 from health_tree._ids import UUIDv7Factory
 from health_tree.engine import Engine
 from health_tree.types import (
@@ -271,7 +273,7 @@ def test_snapshot_restores_state_through_json() -> None:
     for item in graph:
         new.register(item, at(5))
     assert new.restore(state, at(5)) == []
-    assert new.snapshot() == old.snapshot() | {"now": new.snapshot()["now"]}
+    assert new.snapshot() == old.snapshot()
     old.ingest(obs("host", PASS, at(10)), at(10))
     new.ingest(obs("host", PASS, at(10)), at(10))
     assert summary(old.advance(at(40))) == summary(new.advance(at(40)))
@@ -376,3 +378,56 @@ def test_an_id_factory_may_not_reuse_an_open_id() -> None:
     engine.ingest(obs("a", FAIL, T0), T0)
     with pytest.raises(ValueError, match="already open"):
         engine.ingest(obs("b", FAIL, at(1)), at(1))
+
+
+def test_snapshot_is_equal_while_no_condition_changes() -> None:
+    """Rule 24: re-observing unchanged conditions at a later time changes no durable state."""
+    # Checks without a TTL: with one, the expiry is state that each observation moves.
+    graph = [
+        node("host", checks=[check(ttl=None)]),
+        node("device", "host", checks=[check(ttl=None)]),
+    ]
+    engine = _engine(*graph)
+    engine.ingest_many([obs("host", FAIL, T0), obs("device", PASS, T0)], T0)
+    engine.advance(at(60))
+    first = engine.snapshot()
+    engine.ingest_many(
+        [obs("host", FAIL, at(120)), obs("device", PASS, at(120))], at(120)
+    )
+    engine.advance(at(180))
+    assert engine.snapshot() == first
+    assert "now" not in first
+    records = cast(list[dict[str, Any]], first["checks"])
+    assert all("observation" not in record for record in records)
+
+
+def test_restore_reads_schema_one_observations_as_observed() -> None:
+    """A snapshot written before schema 2 restores; its payloads count only as observed."""
+    graph = [node("host", checks=[check()]), node("device", "host", checks=[check()])]
+    old = _engine(*graph)
+    old.ingest(obs("host", FAIL, T0), T0)
+    state: dict[str, Any] = json.loads(json.dumps(old.snapshot()))
+    state["schema_version"] = 1
+    state["now"] = "2026-10-18T00:00:00+00:00"
+    checks: list[dict[str, Any]] = state["checks"]
+    for record in checks:
+        for key in (
+            "observed",
+            "latest_reason",
+            "latest_message",
+            "latest_due_at",
+            "expires_at",
+        ):
+            record.pop(key)
+        record["observation"] = (
+            observation_to_json(obs("host", FAIL, T0))
+            if record["node_id"] == "host"
+            else None
+        )
+    new = Engine(SETTINGS, new_id=counting_ids())
+    for item in graph:
+        new.register(item, at(5))
+    new.restore(state, at(5))
+    coverage = new.coverage()
+    assert [item.node_id for item in coverage.never_observed] == ["device"]
+    assert new.snapshot()["checks"] == old.snapshot()["checks"]

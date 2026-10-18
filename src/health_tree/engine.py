@@ -19,7 +19,6 @@ from health_tree._codec import (
     episode_from_json,
     episode_to_json,
     observation_from_json,
-    observation_to_json,
     required_time,
     strings_list,
     time_from_json,
@@ -57,7 +56,7 @@ from health_tree.types import (
     View,
 )
 
-SCHEMA_VERSION = 1
+SCHEMA_VERSION = 2
 """The version of the data `Engine.snapshot` returns."""
 
 _ZERO = timedelta(0)
@@ -316,11 +315,14 @@ class Engine:
         )
 
     def snapshot(self) -> dict[str, JSONValue]:
-        """All state, as JSON-compatible data with a schema version (rule 24)."""
+        """Durable state as JSON-compatible data with a schema version (rule 24).
+
+        Two snapshots taken while no condition changed are equal: the clock and
+        each check's last observation payload are not part of it.
+        """
         millis, counter = self._ids.state
         return {
             "schema_version": SCHEMA_VERSION,
-            "now": time_to_json(self._last),
             "ids": [millis, counter],
             "windows": [
                 {
@@ -354,7 +356,7 @@ class Engine:
         keep their ids and continue without a new `opened` event. Startup grace
         starts again at `now`.
         """
-        if state.get("schema_version") != SCHEMA_VERSION:
+        if state.get("schema_version") not in {1, SCHEMA_VERSION}:
             raise ValueError(f"cannot restore schema {state.get('schema_version')!r}")
         first_call = self._last is None
         self._tick(now)
@@ -503,7 +505,7 @@ class Engine:
         for node_id in self._order:
             for check_id, state in self._checks[node_id].items():
                 reference = CheckReference(node_id=node_id, check_id=check_id)
-                if state.observation is None:
+                if not state.observed:
                     never_observed.append(reference)
                 assert self._last is not None
                 if state.is_stale(self._last):
@@ -1163,11 +1165,11 @@ def _check_to_json(state: CheckState) -> JSONObject:
         "due_at": time_to_json(state.due_at),
         "pending": None if state.pending is None else state.pending.value,
         "pending_since": time_to_json(state.pending_since),
-        "observation": (
-            None
-            if state.observation is None
-            else observation_to_json(state.observation)
-        ),
+        "observed": state.observed,
+        "latest_reason": state.latest_reason,
+        "latest_message": state.latest_message,
+        "latest_due_at": time_to_json(state.latest_due_at),
+        "expires_at": time_to_json(state.expires_at),
         "expired": state.expired,
         "problem_known": state.problem_known,
         "stale_at": time_to_json(state.stale_at),
@@ -1179,7 +1181,6 @@ def _restore_check(checks: dict[str, dict[str, CheckState]], data: JSONObject) -
     if state is None:
         return
     pending = data["pending"]
-    observation = data["observation"]
     reason = data["reason"]
     message = data["message"]
     state.effective = Status(data["effective"])
@@ -1189,9 +1190,30 @@ def _restore_check(checks: dict[str, dict[str, CheckState]], data: JSONObject) -
     state.due_at = time_from_json(data["due_at"])
     state.pending = None if pending is None else Status(pending)
     state.pending_since = time_from_json(data["pending_since"])
-    state.observation = (
-        None if observation is None else observation_from_json(observation)
-    )
+    # Schema 1 stored the last observation payload; schema 2 keeps its durable
+    # details: whether the check was observed, the details a pending transition
+    # applies, and when evidence with a TTL expires.
+    if "observed" in data:
+        state.observed = bool(data["observed"])
+        latest_reason = data["latest_reason"]
+        latest_message = data["latest_message"]
+        state.latest_reason = None if latest_reason is None else str(latest_reason)
+        state.latest_message = None if latest_message is None else str(latest_message)
+        state.latest_due_at = time_from_json(data["latest_due_at"])
+        state.expires_at = time_from_json(data["expires_at"])
+    else:
+        payload = data.get("observation")
+        latest = None if payload is None else observation_from_json(payload)
+        state.observed = latest is not None
+        state.latest_reason = None if latest is None else latest.reason
+        state.latest_message = None if latest is None else latest.message
+        state.latest_due_at = None if latest is None else latest.due_at
+        state.expires_at = (
+            None
+            if latest is None or state.check.ttl is None
+            else latest.observed_at + state.check.ttl
+        )
+    state.observation = None
     state.expired = bool(data["expired"])
     state.problem_known = bool(data["problem_known"])
     state.stale_at = time_from_json(data["stale_at"])

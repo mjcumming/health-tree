@@ -27,6 +27,13 @@ class CheckState:
     pending: Status | None = None
     pending_since: datetime | None = None
     observation: Observation | None = None
+    observed: bool = False
+    # Durable details of the latest observation: what a pending transition applies
+    # when its hold ends, and when evidence with a TTL expires (ADR 0041).
+    latest_reason: str | None = None
+    latest_message: str | None = None
+    latest_due_at: datetime | None = None
+    expires_at: datetime | None = None
     expired: bool = False
     problem_known: bool = False
     stale_at: datetime | None = None
@@ -46,6 +53,13 @@ class CheckState:
         """Apply a new observation at `now`."""
         self.advance(now)
         self.observation = observation
+        self.observed = True
+        self.latest_reason = observation.reason
+        self.latest_message = observation.message
+        self.latest_due_at = observation.due_at
+        self.expires_at = (
+            None if self.check.ttl is None else observation.observed_at + self.check.ttl
+        )
         self.expired = False
         self._raw(observation.status, now)
 
@@ -129,9 +143,9 @@ class CheckState:
         return self.pending_since + hold
 
     def _expiry(self) -> datetime | None:
-        if self.check.ttl is None or self.observation is None or self.expired:
+        if self.expires_at is None or self.expired:
             return None
-        return self.observation.observed_at + self.check.ttl
+        return self.expires_at
 
     def _raw(self, status: Status, at: datetime) -> None:
         if status is self.effective:
@@ -182,8 +196,6 @@ class CheckState:
             self.reason = self.message = self.due_at = None
 
     def _take_details(self) -> None:
-        observation = self.observation
-        assert observation is not None
-        self.reason = observation.reason
-        self.message = observation.message
-        self.due_at = observation.due_at
+        self.reason = self.latest_reason
+        self.message = self.latest_message
+        self.due_at = self.latest_due_at
