@@ -41,6 +41,7 @@ _MATCH_KEYS = frozenset(
         "age",
         "due_within",
         "nodes",
+        "qualified_nodes",
         "checks",
         "excluded_checks",
     }
@@ -55,6 +56,7 @@ _EPISODE_FIELDS = frozenset(
         "importance",
         "reasons",
         "recorded",
+        "qualified_nodes",
         "absorbed",
     }
 )
@@ -452,7 +454,7 @@ def _check(value: object, where: str, problems: list[str]) -> str | None:
         return None
     _reject_unknown(
         value,
-        {"id", "affects_own", "labels", "annotations", *_CHECK_DURATIONS},
+        {"id", "affects_own", "continuous", "labels", "annotations", *_CHECK_DURATIONS},
         where,
         problems,
     )
@@ -467,6 +469,8 @@ def _check(value: object, where: str, problems: list[str]) -> str | None:
             _duration(value[name], f"{where}.{name}", problems)
     if "affects_own" in value and not isinstance(value["affects_own"], bool):
         problems.append(f"{where}.affects_own must be a boolean")
+    if "continuous" in value and not isinstance(value["continuous"], bool):
+        problems.append(f"{where}.continuous must be a boolean")
     return check_id
 
 
@@ -902,6 +906,8 @@ def _episode_details(
             isinstance(node, str) and node in nodes for node in recorded
         ):
             problems.append(f"{where}.recorded must be registered node ids")
+    if "qualified_nodes" in body:
+        _node_ids(body["qualified_nodes"], nodes, f"{where}.qualified_nodes", problems)
     if "absorbed" in body:
         absorbed = body["absorbed"]
         if not isinstance(absorbed, list):

@@ -1130,6 +1130,10 @@ def _matches(match: Match, finding: Finding, episode: Episode, now: datetime) ->
                 match.nodes & (episode.impact | episode.recorded | {episode.anchor})
             )
         )
+        and (
+            match.qualified_nodes is None
+            or bool(match.qualified_nodes & episode.qualified_nodes)
+        )
         and (match.checks is None or finding.check_id in match.checks)
         and finding.check_id not in match.excluded_checks
         and all(labels.get(key) == value for key, value in match.labels.items())

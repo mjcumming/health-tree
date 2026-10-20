@@ -93,6 +93,7 @@ def episode_to_json(episode: Episode) -> JSONObject:
         "reasons": [finding_to_json(finding) for finding in episode.reasons],
         "recorded": strings_list(episode.recorded),
         "impact": strings_list(episode.impact),
+        "qualified_nodes": strings_list(episode.qualified_nodes),
         "importance": episode.importance.value,
         "opened_at": time_to_json(episode.opened_at),
         "updated_at": time_to_json(episode.updated_at),
@@ -114,6 +115,9 @@ def episode_from_json(value: JSONValue) -> Episode:
         reasons=tuple(finding_from_json(item) for item in _list(data["reasons"])),
         recorded=frozenset(str(item) for item in _list(data["recorded"])),
         impact=frozenset(str(item) for item in _list(data["impact"])),
+        qualified_nodes=frozenset(
+            str(item) for item in _list(data.get("qualified_nodes", []))
+        ),
         importance=Importance(data["importance"]),
         opened_at=required_time(data["opened_at"]),
         updated_at=required_time(data["updated_at"]),

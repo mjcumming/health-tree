@@ -1,0 +1,101 @@
+id: scenario-86-qualified-affected-scope
+title: A dependent qualifies its route on the shared problem after fresh continuous evidence
+covers: [scenario-86]
+start: '2026-10-19T00:00:00Z'
+settings:
+  settle: 0s
+  rejoin_grace: 0s
+  startup_grace: 0s
+  coalesce_count: null
+  coalesce_window: 0s
+graph:
+  - id: integration
+    checks:
+      - {id: availability, raise_hold: 0s, clear_hold: 0s, ttl: null, unknown_hold: 15m}
+  - id: camera
+    depends_on: [integration]
+    checks:
+      - {id: availability, raise_hold: 1m, clear_hold: 0s, ttl: null, unknown_hold: 1m, continuous: true}
+policy:
+  batch: 0s
+  recipients:
+    owner: {channels: [phone]}
+  digests: {}
+  rules:
+    - match: {nodes: [camera], qualified_nodes: [camera], checks: [availability]}
+      loudness: urgent
+      to: [owner]
+    - match: {}
+      loudness: record
+steps:
+  - at: '2026-10-19T00:00:00Z'
+    ingest:
+      - {node: integration, check: availability, status: pass, reason: available}
+      - {node: camera, check: availability, status: pass, reason: available}
+    expect: {events: [], deliveries: []}
+  - at: '2026-10-19T00:00:01Z'
+    ingest:
+      - {node: integration, check: availability, status: fail, reason: integration_failed}
+      - {node: camera, check: availability, status: warn, reason: unavailable}
+    expect:
+      bind: {problem: {opened: integration}}
+      events: [{opened: {anchor: integration, episode: $problem, qualified_nodes: [integration], recorded: []}}]
+      deliveries: []
+  - at: '2026-10-19T00:00:20Z'
+    ingest:
+      - {node: camera, check: availability, status: unknown, reason: source_missing}
+    expect: {events: [], deliveries: []}
+  - at: '2026-10-19T00:00:30Z'
+    ingest:
+      - {node: camera, check: availability, status: warn, reason: unavailable}
+    expect: {events: [], deliveries: []}
+  - at: '2026-10-19T00:00:50Z'
+    restart: true
+    expect: {events: [], deliveries: []}
+  - at: '2026-10-19T00:01:10Z'
+    ingest:
+      - {node: camera, check: availability, status: warn, reason: unavailable}
+    expect: {events: [], deliveries: []}
+  - at: '2026-10-19T00:01:30Z'
+    expect: {events: [], deliveries: []}
+  - at: '2026-10-19T00:02:09Z'
+    expect: {events: [], deliveries: []}
+  - at: '2026-10-19T00:02:10Z'
+    expect:
+      events: [{updated: {anchor: integration, episode: $problem, qualified_nodes: [integration, camera], recorded: [camera], reasons: [integration_failed]}}]
+      deliveries:
+        - {episode: $problem, to: owner, loudness: urgent, silent: false}
+  - at: '2026-10-19T00:02:11Z'
+    restart: true
+    expect: {events: [], deliveries: []}
+  - at: '2026-10-19T00:02:12Z'
+    ingest:
+      - {node: camera, check: availability, status: unknown, reason: source_missing}
+    expect:
+      events: [{updated: {episode: $problem, qualified_nodes: [integration, camera], recorded: []}}]
+      deliveries:
+        - {episode: $problem, to: owner, loudness: urgent, silent: true}
+  - at: '2026-10-19T00:02:13Z'
+    ingest:
+      - {node: camera, check: availability, status: warn, reason: unavailable}
+    expect: {events: [], deliveries: []}
+  - at: '2026-10-19T00:03:13Z'
+    expect:
+      events: [{updated: {episode: $problem, qualified_nodes: [integration, camera], recorded: [camera]}}]
+      deliveries:
+        - {episode: $problem, to: owner, loudness: urgent, silent: true}
+  - at: '2026-10-19T00:03:14Z'
+    ingest:
+      - {node: camera, check: availability, status: pass, reason: available}
+    expect:
+      events: [{updated: {episode: $problem, qualified_nodes: [integration], recorded: []}}]
+      deliveries: []
+  - at: '2026-10-19T00:03:15Z'
+    ingest:
+      - {node: camera, check: availability, status: warn, reason: unavailable}
+    expect: {events: [], deliveries: []}
+  - at: '2026-10-19T00:04:15Z'
+    expect:
+      events: [{updated: {episode: $problem, qualified_nodes: [integration, camera], recorded: [camera]}}]
+      deliveries:
+        - {episode: $problem, to: owner, loudness: urgent, silent: false}

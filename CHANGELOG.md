@@ -4,6 +4,17 @@ All notable changes to this project are documented here. The format follows [Kee
 
 ## [Unreleased]
 
+## [0.11.0] - 2026-10-19
+
+### Added
+
+- Optional continuous check qualification restarts incomplete worsening holds after missing evidence or restart, preserving effective issues and recovery timing.
+- Qualified affected-node scope lets a dependent's attention assignment wait for its own effective warning or failure while sharing its dependency's episode.
+
+### Fixed
+
+- Current worsening evidence cannot become stale from an earlier missing interval while continuous qualification runs. Earned continuous qualification survives uncertainty until effective recovery, preventing a shared issue from replaying its opening.
+
 ## [0.10.0] - 2026-10-18
 
 ### Added

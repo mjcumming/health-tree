@@ -40,6 +40,7 @@ def check(
     clear_hold: float = 30,
     ttl: float | None = 3600,
     unknown_hold: float = 900,
+    continuous: bool = False,
     affects_own: bool = True,
     labels: dict[str, str] | None = None,
 ) -> Check:
@@ -50,6 +51,7 @@ def check(
         clear_hold=timedelta(seconds=clear_hold),
         ttl=None if ttl is None else timedelta(seconds=ttl),
         unknown_hold=timedelta(seconds=unknown_hold),
+        continuous=continuous,
         affects_own=affects_own,
         labels=labels or {},
     )

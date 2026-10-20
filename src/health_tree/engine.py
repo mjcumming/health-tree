@@ -1135,6 +1135,20 @@ class Engine:
             if frame.roots[name] & sources and not self._has_episode(name)
         }
         impact = self._dependents(anchor)
+        qualified_nodes = frozenset(
+            name
+            for name in {anchor, *recorded, *impact}
+            if any(
+                finding.status in {Status.WARN, Status.FAIL}
+                for finding in frame.findings[name]
+            )
+            or any(
+                state.check.continuous
+                and state.check.affects_own
+                and state.problem_known
+                for state in self._checks[name].values()
+            )
+        )
         return Episode(
             episode_id=state.episode_id,
             form=state.form,
@@ -1151,6 +1165,7 @@ class Engine:
             ),
             absorbed=frozenset(state.absorbed),
             labels=self._nodes[anchor].labels,
+            qualified_nodes=qualified_nodes,
         )
 
 
@@ -1190,6 +1205,8 @@ def _restore_check(checks: dict[str, dict[str, CheckState]], data: JSONObject) -
     state.due_at = time_from_json(data["due_at"])
     state.pending = None if pending is None else Status(pending)
     state.pending_since = time_from_json(data["pending_since"])
+    if state.check.continuous and state.worsening_pending():
+        state.pending = state.pending_since = None
     # Schema 1 stored the last observation payload; schema 2 keeps its durable
     # details: whether the check was observed, the details a pending transition
     # applies, and when evidence with a TTL expires.

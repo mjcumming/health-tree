@@ -93,6 +93,7 @@ class CheckState:
         """Unknown for longer than `unknown_hold`."""
         return (
             self.effective is Status.UNKNOWN
+            and not (self.check.continuous and self.worsening_pending())
             and self.stale_at is not None
             and now >= self.stale_at
         )
@@ -113,7 +114,9 @@ class CheckState:
     def next_deadline(self, now: datetime) -> datetime | None:
         """The next time this check changes on its own, after `now`."""
         times = [self._hold_due(), self._expiry()]
-        if self.effective is Status.UNKNOWN:
+        if self.effective is Status.UNKNOWN and not (
+            self.check.continuous and self.worsening_pending()
+        ):
             times.append(self.stale_at)
         return min(
             (time for time in times if time is not None and time > now), default=None
@@ -148,6 +151,9 @@ class CheckState:
         return self.expires_at
 
     def _raw(self, status: Status, at: datetime) -> None:
+        if status is Status.UNKNOWN and self.check.continuous:
+            self._set(status, at, from_observation=True)
+            return
         if status is self.effective:
             self.pending = self.pending_since = None
             self._take_details()
@@ -180,7 +186,10 @@ class CheckState:
     ) -> None:
         """Make `status` effective at `at`. It began at `since`, before its hold."""
         began = at if since is None else since
-        if status is Status.UNKNOWN and self.effective is not Status.UNKNOWN:
+        if status is Status.UNKNOWN and (
+            self.effective is not Status.UNKNOWN
+            or (self.check.continuous and self.worsening_pending())
+        ):
             self.stale_at = began + self.check.unknown_hold
         if status is not self.effective:
             self.since = began

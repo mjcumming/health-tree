@@ -316,6 +316,7 @@ def _check(data: Mapping[str, Any]) -> Check:
         clear_hold=parse_duration(data["clear_hold"]),
         ttl=None if ttl is None else parse_duration(ttl),
         unknown_hold=parse_duration(data["unknown_hold"]),
+        continuous=data.get("continuous", False),
         affects_own=data.get("affects_own", True),
         labels=_strings(data.get("labels")),
         annotations=_strings(data.get("annotations")),
@@ -463,6 +464,7 @@ def _match(data: Mapping[str, Any]) -> Match:
         reason=strings("reason"),
         category=strings("category"),
         nodes=strings("nodes"),
+        qualified_nodes=strings("qualified_nodes"),
         checks=strings("checks"),
         excluded_checks=strings("excluded_checks") or frozenset(),
         labels=_strings(data.get("labels")),
@@ -926,6 +928,8 @@ class _Run:
                 return Counter(value), Counter(f.reason for f in episode.reasons)
             case "recorded":
                 return set(value), set(episode.recorded)
+            case "qualified_nodes":
+                return set(value), set(episode.qualified_nodes)
             case "absorbed":
                 return {self._resolve(ref) for ref in value}, set(episode.absorbed)
             case "anchor":

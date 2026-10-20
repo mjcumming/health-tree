@@ -123,6 +123,7 @@ class Check:
 
     `ttl` of `None`, said explicitly, disables observation expiry. It does not
     disable `unknown_hold` (ADR 0026).
+    `continuous` requires fresh uninterrupted evidence for a worsening hold.
     """
 
     check_id: str
@@ -130,6 +131,7 @@ class Check:
     clear_hold: timedelta
     ttl: timedelta | None
     unknown_hold: timedelta
+    continuous: bool = False
     affects_own: bool = True
     labels: Mapping[str, str] = field(default_factory=dict)
     annotations: Mapping[str, str] = field(default_factory=dict)
@@ -229,6 +231,7 @@ class Episode:
     """One problem, from onset to resolution, anchored on one node (RFP 5).
 
     `episode_id` is a UUIDv7 string built from `now` (ADR 0017).
+    `qualified_nodes` names affected nodes with qualified unresolved problems.
     """
 
     episode_id: str
@@ -245,6 +248,7 @@ class Episode:
     absorbed: frozenset[str] = frozenset()
     labels: Mapping[str, str] = field(default_factory=dict)
     annotations: Mapping[str, str] = field(default_factory=dict)
+    qualified_nodes: frozenset[str] = frozenset()
 
 
 @dataclass(frozen=True, slots=True, kw_only=True)
@@ -488,6 +492,7 @@ class Match:
     `labels` must all be present with the given values, on the check's labels
     laid over the anchor node's. `age` is a minimum episode age. `due_within`
     matches a reason whose `due_at` is at most that far from `now`.
+    `qualified_nodes` independently requires qualified affected-node membership.
     """
 
     status: frozenset[Status] | None = None
@@ -498,6 +503,7 @@ class Match:
     age: timedelta | None = None
     due_within: timedelta | None = None
     nodes: frozenset[str] | None = None
+    qualified_nodes: frozenset[str] | None = None
     checks: frozenset[str] | None = None
     excluded_checks: frozenset[str] = frozenset()
 

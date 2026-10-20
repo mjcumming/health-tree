@@ -89,6 +89,7 @@ def test_checked_in_fixtures_match_the_schema() -> None:
         "scenario-83-compatible-delivery-groups.yaml",
         "scenario-84-independent-siblings.yaml",
         "scenario-85-fixed-window-collections.yaml",
+        "scenario-86-qualified-affected-scope.yaml",
         "story-02-detector-hangs.yaml",
         "story-04-battery-digest.yaml",
         "story-06-ai-box.yaml",

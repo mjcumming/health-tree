@@ -4,11 +4,11 @@ Design of record for this library. A Home Assistant integration is the first con
 
 | | |
 | --- | --- |
-| Version | 0.12 |
-| Date | 2026-10-18 |
-| Status | Draft for review, with ADRs 0024 to 0042 accepted. Release status is recorded in the changelog. Real observation proofs remain outstanding. |
+| Version | 0.13 |
+| Date | 2026-10-19 |
+| Status | Draft for review, with ADRs 0024 to 0043 accepted. Release status is recorded in the changelog. Real observation proofs remain outstanding. |
 | Decisions | [docs/adr](adr/README.md) |
-| Changes from 0.11 | Section 24 |
+| Changes from 0.12 | Section 25 |
 
 ## Purpose
 
@@ -208,6 +208,7 @@ Records are immutable. Times are timezone-aware UTC. Durations are `timedelta`.
 - `check_id`
 - `affects_own` (default true). False keeps the result as evidence and out of `own`.
 - `raise_hold`: how long a worsening must persist before it takes effect
+- `continuous`: optional, false by default. An opted-in check requires uninterrupted worsening evidence; unknown interrupts pending qualification, and restore requires fresh evidence to begin a new worsening hold. Already effective problems and pending recovery retain their normal behavior
 - `clear_hold`: how long `pass` must persist before a clear takes effect
 - `ttl`: after this, a check with no fresh observation is `unknown`. `None`, said explicitly, disables expiry of an observation; it does not disable `unknown_hold` for a check that has never reported or reports `unknown`
 - `unknown_hold`: how long `unknown` may last before a `stale` episode opens. Always a duration, because a checker that cannot run also reports `unknown`
@@ -232,6 +233,7 @@ A control state is not an observation. The adapter may use a control state to co
 - `reasons`: each `warn` or `fail` check of the anchor and of any coalesced members, plus each check whose `unknown_hold` has elapsed, with status, reason, message, since, `due_at`, and the check's own labels and annotations. An unknown check contributes reason `stale` only after its hold; before that it still affects `own`, readiness, and coverage. Coalescing adds `dependents_failing`
 - `recorded`: failing nodes muted by this episode, and coalesced members
 - `impact`: every node that depends on the anchor, directly or not
+- `qualified_nodes`: nodes in anchor, recorded and impact with an effective warning or failure finding. A continuous check retains earned qualification through unknown evidence until effective pass or removal. An initial pending worsening or stale unknown finding does not earn qualification; a change in this scope updates the episode
 - `importance`: the maximum over the anchor and its impact
 - `labels`, `annotations`: the anchor node's. A check's labels stay on its reason and are never merged (ADR 0020)
 - `absorbed`: ids of episodes folded into this one
@@ -251,6 +253,10 @@ These are the rules from the health-tree design, restated as library law.
 1. A node's `own` status comes only from its own checks.
 2. `own` is the worst of the checks with `affects_own`, after holds and `ttl`. A node with no such checks is `unknown`. It never opens an episode for that, and `coverage` lists it.
 3. A worsening waits out the check's `raise_hold`. A clear to `pass` waits out its `clear_hold`. An improvement from `fail` to `warn` takes effect at once. The engine has no flap branch.
+
+For `continuous` checks, an explicit unknown report immediately interrupts pending worsening and starts normal unknown-evidence timing. Expiry also interrupts through its unknown transition. After restore, a pending worsening is discarded and a fresh worsening observation starts the full hold. Already effective warning or failure and pending recovery are preserved. Ordinary checks retain their established holds across unknown reports and restart. See ADR 0043.
+
+A current known worsening inside a continuous hold cannot open a stale finding from an earlier unknown interval. If another unknown report or expiry interrupts that pending evidence, its unknown hold starts at that interruption. Repeated unknown reports retain that deadline.
 4. A check with no fresh observation within `ttl` is `unknown`.
 5. A checker that cannot run submits `unknown`, not `fail`.
 
@@ -269,7 +275,7 @@ A registered check starts `unknown`, with its `unknown_hold` measured from regis
 
 12. An episode opens when a node's `own` is `warn` or `fail` and the node is not muted, not gated, not coalesced onto another episode (rule 18), and not inside a quiet window. One also opens, with reason `stale`, when a check has been `unknown` for longer than its `unknown_hold`.
 13. Settle gate. A node cannot open an episode while any hard dependency is in doubt: a worsening is inside its `raise_hold`, its `own` is `unknown`, or it is gated itself. A dependency that is `pass` or `warn` on observations within `ttl` is not in doubt, however long ago it last reported. A dependency with no checks never gates. The gate lasts at most `settle` from the node's onset. While gated, the engine emits `ProbeRequested` once for each dependency in doubt. A parent confirmed after the child's episode opened is handled by absorption (rule 16). See ADR 0022.
-14. One root, one episode, updated in place. A change to reasons, recorded nodes, impact, importance, or `due_at` is an `updated` event.
+14. One root, one episode, updated in place. A change to reasons, recorded nodes, impact, qualified nodes, importance, or `due_at` is an `updated` event.
 15. A `root` episode resolves when its anchor's `own` has stayed `pass` through `clear_hold` and it holds no coalesced members. If nodes it recorded as muted still fail when the anchor clears, the episode stays open and holds them through their rejoin grace (rule 19), so there is no false all-clear. Held nodes that recover leave. When the grace ends, if `coalesce_count` or more still fail, they become the episode's members (rule 18). Otherwise the episode resolves and each still-failing node opens its own episode. A `group` episode resolves by its members (rule 18), never by its anchor. `fail` to `warn` is an update, not a recovery.
 16. Absorption. When a root's episode opens, an open episode on a node that depends on it resolves as `absorbed` if that node's onset is no more than `settle` before the root's onset. The node is then recorded on the root's episode.
 17. An episode whose onset is earlier than that stays open, and its node is not recorded on the root's episode. Two problems, two episodes. When the root recovers, that episode continues, and nothing opens twice.
@@ -445,6 +451,8 @@ Policy snapshot version 3 adds acknowledgment and the original due time of shelf
 Digests may select weekdays (Monday 0 to Sunday 6) and repeat still-open problems at every occurrence. Defaults remain daily and one-shot. Explicit rule recipients override the digest fallback recipient. A delivery identifies whether that recipient previously received the problem. Reports contain no resolved episodes and produce no delivery when empty. Shelving and opted-in acknowledgment suppress eligible entries. Late advances issue one current report, never a backlog. See ADR 0035.
 
 `Policy.reports(now)` returns read-only provisional next occurrences and eligible episode and recipient ids. Local schedules use the first repeated clock time and normalize nonexistent times forward. A rule's `nodes` match an episode when any of them is the episode's anchor, one of its recorded nodes, or in its impact. Optional check-id inclusion and exclusion refine each finding match; all ids are opaque strings. Rule ordering remains consumer-owned.
+
+An optional `qualified_nodes` predicate additionally requires an intersection with the episode's current qualified scope. Its node membership and the reason's check, status and labels are independent predicates; recorded dependent findings are not added to the root's reasons. Missing scope in an older snapshot decodes as empty and engine evaluation rebuilds it from effective checks. See ADR 0043.
 
 Scenarios 79 and 80 cover weekly recurrence, restart, multiple recipients, resolution before a report, and affected-node preferences with check exceptions.
 
@@ -630,6 +638,8 @@ Each is tagged with its area.
 
 85. **Fixed-window collections.** Unrelated eligible requests sharing a saved identity and target collect without extending the first deadline. Restart preserves accepted targets and exact membership; late requests start new windows, empty windows send nothing, and scheduled reports bypass the wait. Absorption and splitting preserve authorized opening history.
 
+86. **Qualified affected scope.** A dependency fails before a dependent's continuous worsening qualifies. A route requiring that dependent's qualified node stays silent until its hold ends, then requests attention on the existing shared episode. Unknown and restart interrupt incomplete qualification; ordinary checks retain their existing timing. Qualified effective issues and delivery history survive restart.
+
 ## 11. Home Assistant integration, later
 
 The adapter's [maintenance and health roadmap](https://github.com/mjcumming/homeostatic/blob/main/docs/roadmap.md)
@@ -803,3 +813,8 @@ Fixed-window collections and absorption history have synthetic executable covera
 
 - Optional fixed-window collections retain accepted targets, instructions, exact membership and deadlines through restart. Independent windows use distinct message identities; quiet hours and startup holds precede release, and reports add no delay (ADR 0042).
 - Policy absorption transfers applicable route history without reopening attention. Explicit predecessor identities let delivery reduction retain pending deadlines and silent updates through absorption and splitting. A per-rule batch override prevents successive collection waits.
+
+## 25. Changes from 0.12
+
+- Optional continuous checks require a fresh uninterrupted worsening interval after missing evidence or restart. A known worsening inside its hold cannot become stale from an earlier missing interval (ADR 0043).
+- Qualified affected-node matching lets a dependent's route wait for its own qualification on a shared root episode. Earned continuous qualification survives uncertainty until effective recovery or removal; existing snapshots restore without losing episode identities or delivery history.
